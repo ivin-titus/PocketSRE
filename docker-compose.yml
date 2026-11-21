@@ -5,4 +5,8 @@ services:
     env_file: .env
     ports:
       - "127.0.0.1:8080:8080"
+    volumes:
+      # Read-only mounts: key + sanitized infra docs never enter the image.
+      - ${SSH_KEY_PATH:-~/.ssh/pocketsre_bot_ed25519}:/app/.ssh/pocketsre_bot_ed25519:ro
+      - ./docs/infra:/app/docs/infra:ro
     restart: unless-stopped
