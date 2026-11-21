@@ -25,11 +25,13 @@ class ActionService:
         executor: SshExecutor | None = None,
         presence: PresenceProbe | None = None,
         max_trials: int = 3,
+        privilege_mode: str = "non_root",
     ) -> None:
         self.audit_log = audit_log
         self.executor = executor
         self.presence = presence
         self.max_trials = max_trials
+        self.privilege_mode = privilege_mode
         self._results: dict = {}
 
     def results_for(self, incident_id) -> list[ActionResult]:
@@ -39,6 +41,14 @@ class ActionService:
         if is_mutating(request.action):
             if request.actor_role is not ActorRole.LEAD or not request.approved:
                 raise PermissionError("Lifecycle actions require explicit approval from a lead.")
+        if request.params and request.params.freeform_command:
+            # FULL_ROOT break-glass: ad-hoc bash, still lead-gated + audited.
+            if self.privilege_mode != "full_root":
+                raise PermissionError(
+                    "freeform commands require EXECUTION_PRIVILEGE_MODE=full_root "
+                    "(whitelist-only under non_root)."
+                )
+            return request.params.freeform_command
         return command_for(request.action, request.service, request.params)
 
     def plan(self, request: ActionRequest) -> ActionResult:

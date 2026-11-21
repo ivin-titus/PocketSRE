@@ -40,6 +40,34 @@ def _request(action: RunbookAction, role: ActorRole, approved: bool) -> ActionRe
     )
 
 
+class TestPrivilegeMode:
+    def _freeform_req(self) -> ActionRequest:
+        from app.shared.contracts import ActionParams
+
+        return ActionRequest(
+            incident_id=uuid4(),
+            action=RunbookAction.INSPECT_SERVICE,
+            service="yuki-telegram-bot",
+            actor_id="lead-1",
+            actor_role=ActorRole.LEAD,
+            approved=True,
+            params=ActionParams(freeform_command="sudo /usr/bin/uptime"),
+        )
+
+    def test_non_root_blocks_freeform(self) -> None:
+        import pytest
+
+        svc = ActionService(AuditLog(), executor=FakeExecutor(CommandOutcome("c", 0, "ok", "")), privilege_mode="non_root")
+        with pytest.raises(PermissionError):
+            svc.execute(self._freeform_req())
+
+    def test_full_root_allows_freeform(self) -> None:
+        executor = FakeExecutor(CommandOutcome("c", 0, "ok", ""))
+        svc = ActionService(AuditLog(), executor=executor, privilege_mode="full_root")
+        result = svc.execute(self._freeform_req())
+        assert executor.ran == ["sudo /usr/bin/uptime"]
+
+
 def test_execute_runs_whitelisted_command_and_captures_streams() -> None:
     outcome = CommandOutcome(
         command="sudo /usr/bin/docker logs --tail 50 yuki-telegram-bot",

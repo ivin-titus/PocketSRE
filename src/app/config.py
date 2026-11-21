@@ -58,6 +58,11 @@ class Settings(BaseSettings):
     budget_smallest_usd: float | None = None
     devin_session_cost_estimate_usd: float = 1.00
     llm_call_cost_estimate_usd: float = 0.00  # Gemini free tier; set small for OpenAI
+    # Daily spend caps (UTC day); flat caps above are cumulative lifetime caps
+    budget_devin_daily_usd: float | None = None
+    budget_llm_daily_usd: float | None = None
+    budget_sarvam_daily_usd: float | None = None
+    budget_smallest_daily_usd: float | None = None
     max_trials_per_incident: int = 3
     execution_privilege_mode: str = "non_root"  # non_root | full_root (PRD §3)
 

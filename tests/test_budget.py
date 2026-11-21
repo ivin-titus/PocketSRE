@@ -13,10 +13,22 @@ def _governor(**overrides) -> BudgetGovernor:
     settings.budget_llm_usd = None
     settings.budget_sarvam_usd = None
     settings.budget_smallest_usd = None
+    settings.budget_devin_daily_usd = None
+    settings.budget_llm_daily_usd = None
+    settings.budget_sarvam_daily_usd = None
+    settings.budget_smallest_daily_usd = None
     settings.budget_per_incident_usd = 5.0
     for k, v in overrides.items():
         setattr(settings, k, v)
     return BudgetGovernor(db=None, settings=settings)
+
+
+def test_daily_cap_blocks_same_day() -> None:
+    gov = _governor(budget_devin_daily_usd=2.0)
+    gov.record("devin", 2.0, uuid4())
+    with pytest.raises(BudgetExhaustedError) as exc:
+        gov.check("devin")
+    assert "daily" in str(exc.value)
 
 
 def test_provider_cap_blocks_call() -> None:

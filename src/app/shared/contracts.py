@@ -55,6 +55,11 @@ class ActionParams(BaseModel):
 
     tail_lines: int = Field(default=50, ge=1, le=500)
     grep: str | None = Field(default=None, max_length=128)
+    freeform_command: str | None = Field(
+        default=None,
+        max_length=512,
+        description="Ad-hoc bash (break-glass); EXECUTION_PRIVILEGE_MODE=full_root only",
+    )
 
 
 class ActionRequest(BaseModel):

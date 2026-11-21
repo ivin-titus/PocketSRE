@@ -62,6 +62,7 @@ async def lifespan(app: FastAPI):
         executor,
         app.state.probe,
         max_trials=settings.max_trials_per_incident,
+        privilege_mode=settings.execution_privilege_mode,
     )
 
     # Presence Poller for Proactive Target Health
