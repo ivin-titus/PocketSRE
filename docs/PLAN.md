@@ -34,9 +34,9 @@
 | **Mission-control page** (health cards, spend gauge, SSE) | ✅ Done | `/console/mission-control.html` — live presence cards (15s refresh), spend gauge, SSE audit feed |
 | **Knowledge upload + injection into triage** | ✅ Done | `POST /api/knowledge/upload` (admin-secret gated, .md/.txt ≤256KB) → `infra_knowledge_docs` in Neon; `load_infra_context(db)` is DB-first, `docs/infra/` is the sanitized public fallback; injected into every triage prompt. Repo docs scrubbed of IP/key names (repo is public) — real topology goes via upload only. `/pocketsre learn-infra` deferred (upload API covers it) |
 | **Gemini + OpenAI client wiring** | ✅ Done | `ai/clients/gemini.py` + `ai/clients/openai.py` (Yuki ports adapted to LLMProvider), `ai/factory.py` picks provider via `AI_PROVIDER`; wired into reactive triage |
-| `scripts/inject_mock_incident.sh` | ❌ Pending | Referenced in README; doesn't exist |
+| `scripts/inject_mock_incident.sh` | ✅ Done | Air-gapped trigger POSTs crafted crash/bug/socket-lock incidents to `/api/incidents`; verified against the container |
 
-**Phase readiness:** Phase 1 ≈ 78% · Phase 2 (voice notes/code-mixing) = 0% · Phase 3 (live voice) = 0%
+**Phase readiness:** Phase 1 ≈ 85% · Phase 2 (voice notes/code-mixing) = 0% · Phase 3 (live voice) = 0%
 
 **Verified environment facts:**
 - SSH to target VM works: `ssh -i ~/.ssh/pocketsre_bot_ed25519 pocketsre@<YUKI_VM_IP> 'sudo /usr/bin/docker logs --tail 10 yuki-telegram-bot'`

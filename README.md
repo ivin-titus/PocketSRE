@@ -269,7 +269,7 @@ ssh -i ~/.ssh/pocketsre_bot_ed25519 pocketsre@<TARGET_VM_IP> 'sudo /usr/bin/dock
 
 ## 🧪 Incident Simulation & Demo Script
 
-PocketSRE will include an automated mock incident injector to rehearse demo scenarios (planned — see `docs/PLAN.md` §G1; not yet implemented):
+PocketSRE ships an air-gapped mock incident injector to rehearse demo scenarios (posts a crafted incident to `/api/incidents`; the real Discord→approve→SSH loop runs from there):
 
 ```bash
 # 1. Trigger container crash (Resource Starvation)
