@@ -23,6 +23,7 @@ from app.shared.contracts import (
 from app.ai.router import LLMRouter
 from app.ai.triage import classify_message
 from app.ai.decision import classify_alert
+from app.persona.presentation import Persona, Presentation, detect_language, language_from
 from app.shared.budget import BudgetExhaustedError, BudgetGovernor
 from app.shared.magic_link import make_console_link
 from app.shared.rbac import actor_role_for
@@ -40,20 +41,25 @@ def truncate(text: str, limit: int = DISCORD_FIELD_LIMIT) -> str:
     return text if len(text) <= limit else text[: limit - 3] + "..."
 
 
-def alert_embed(incident: Incident, console_url: str | None, autonomy_mode: str = "strict_confirmation"):
+def alert_embed(
+    incident: Incident,
+    console_url: str | None,
+    autonomy_mode: str = "strict_confirmation",
+    presentation: Presentation = Presentation(),
+):
     """Card proposing the allowed next steps for a proactive/reactive alert."""
     import discord
 
     embed = discord.Embed(
-        title=f"🚨 {incident.severity.value} — {incident.service}",
-        description=truncate(incident.summary, 500),
+        title=presentation.incident_title(incident.severity.value, incident.service),
+        description=truncate(f"{presentation.incident_intro(incident.service)}\n{incident.summary}", 500),
         color=discord.Color.red(),
     )
     embed.add_field(name="Incident", value=f"`{incident.id}`", inline=True)
     embed.add_field(name="Source", value=incident.source, inline=True)
     embed.add_field(name="Mode", value=f"`{autonomy_mode}`", inline=True)
     embed.add_field(
-        name="Allowed next steps",
+        name=presentation.next_steps_label(),
         value="`Fetch logs` / `Inspect` run free · `Restart` needs a lead · `Dispatch Devin` for code fixes",
         inline=False,
     )
@@ -63,13 +69,13 @@ def alert_embed(incident: Incident, console_url: str | None, autonomy_mode: str 
     return embed
 
 
-def report_embed(result: ActionResult):
+def report_embed(result: ActionResult, presentation: Presentation = Presentation()):
     """Concise post-execution report."""
     import discord
 
     ok = result.status in ("succeeded", "verified")
     embed = discord.Embed(
-        title=f"{result.action.value} → {result.service}",
+        title=presentation.report_title(result.action.value, result.service),
         description=f"**Status:** `{result.status}`",
         color=discord.Color.green() if ok else discord.Color.orange(),
     )
@@ -78,11 +84,11 @@ def report_embed(result: ActionResult):
     return embed
 
 
-def resolution_embed(incident: Incident):
+def resolution_embed(incident: Incident, presentation: Presentation = Presentation()):
     import discord
 
     embed = discord.Embed(
-        title=f"✅ Resolved — {incident.service}",
+        title=f"✅ {presentation.resolution_title(incident.service)}",
         description=truncate(incident.summary, 500),
         color=discord.Color.green(),
     )
@@ -146,6 +152,7 @@ def make_bot(
     decision_base_url: str | None = None,
     decision_model: str = "gemini-decision-1",
     gemini_api_key: str | None = None,
+    default_persona: str = "kiwi",
 ):
     """Create the Discord adapter lazily so HTTP-only development needs no bot token."""
     import discord
@@ -158,6 +165,18 @@ def make_bot(
 
     dispatcher = DevinDispatcher(devin_api_key)
     pr_watches: list[dict] = []  # {incident, session_id, channel, pr_url, dispatched_at, reminded}
+    try:
+        configured_persona = Persona(default_persona.lower())
+    except ValueError:
+        configured_persona = Persona.KIWI
+    guild_personas: dict[int, Persona] = {}
+
+    def presentation_for(channel: object, text: str = "", language: str | None = None) -> Presentation:
+        guild = getattr(channel, "guild", None)
+        guild_id = getattr(guild, "id", 0)
+        persona = guild_personas.get(guild_id, configured_persona)
+        inferred = detect_language(text)
+        return Presentation(persona=persona, language=language_from(language, inferred))
 
     def console_url(incident: Incident, actor_id: str) -> str | None:
         if not (public_base_url and magic_link_secret):
@@ -171,6 +190,7 @@ def make_bot(
         actor_id: str,
         role: ActorRole,
         approved: bool,
+        presentation: Presentation = Presentation(),
     ) -> ActionResult | None:
         request = ActionRequest(
             incident_id=incident.id,
@@ -191,11 +211,11 @@ def make_bot(
         except Exception as exc:
             await channel.send(f"⚠️ `{action.value}` failed to run: {exc}")
             return None
-        await channel.send(embed=report_embed(result))
+        await channel.send(embed=report_embed(result, presentation))
         return result
 
 
-    async def status_embed():
+    async def status_embed(presentation: Presentation = Presentation()):
         """Live presence snapshot + open incidents + spend placeholder."""
         lines: list[str] = []
         if actions.presence is not None:
@@ -212,7 +232,7 @@ def make_bot(
             i for i in incidents.list_all() if i.status.value in ("open", "triaged")
         ]
         embed = discord.Embed(
-            title="PocketSRE — live presence",
+            title=presentation.status_title(),
             description="\n".join(lines) or "Presence probe not configured.",
             color=discord.Color.blue(),
         )
@@ -247,12 +267,14 @@ def make_bot(
             str(message.author.id),
             role,
             approved=True,
+            presentation=presentation_for(message.channel, message.content),
         )
 
     class IncidentApprovalView(discord.ui.View):
-        def __init__(self, incident: Incident) -> None:
+        def __init__(self, incident: Incident, presentation: Presentation) -> None:
             super().__init__(timeout=600)
             self.incident = incident
+            self.presentation = presentation
             self.message: discord.Message | None = None
 
         async def _refresh_card(self) -> None:
@@ -310,7 +332,13 @@ def make_bot(
                 content=f"⏳ Running `{action.value}` for `{self.incident.service}`. Remote action may take up to 30 seconds."
             )
             result = await run_action(
-                interaction.channel, self.incident, action, str(interaction.user.id), role, approved
+                interaction.channel,
+                self.incident,
+                action,
+                str(interaction.user.id),
+                role,
+                approved,
+                self.presentation,
             )
             button.label = original_label
             button.disabled = False
@@ -439,12 +467,16 @@ def make_bot(
             await self._refresh_card()
 
     async def send_incident_card(
-        channel: discord.abc.Messageable, incident: Incident, actor_id: str
+        channel: discord.abc.Messageable,
+        incident: Incident,
+        actor_id: str,
+        presentation: Presentation | None = None,
     ) -> None:
         """Keep a message reference so timed-out controls can be visibly retired."""
-        view = IncidentApprovalView(incident)
+        presentation = presentation or presentation_for(channel)
+        view = IncidentApprovalView(incident, presentation)
         view.message = await channel.send(
-            embed=alert_embed(incident, console_url(incident, actor_id), autonomy_mode), view=view
+            embed=alert_embed(incident, console_url(incident, actor_id), autonomy_mode, presentation), view=view
         )
 
     async def alert_consumer() -> None:
@@ -655,7 +687,15 @@ def make_bot(
                 budget.record("llm", llm_call_cost_usd)
             if classified is not None:
                 if classified["intent"] == "status":
-                    await message.channel.send(embed=await status_embed())
+                    await message.channel.send(
+                        embed=await status_embed(
+                            presentation_for(
+                                message.channel,
+                                message.content,
+                                classified.get("response_language"),
+                            )
+                        )
+                    )
                     return
                 if classified["intent"] == "incident":
                     severity = IncidentSeverity(classified.get("severity_hint", "P2"))
@@ -670,12 +710,23 @@ def make_bot(
                             severity=severity,
                         )
                     )
-                    await send_incident_card(message.channel, incident, str(message.author.id))
+                    await send_incident_card(
+                        message.channel,
+                        incident,
+                        str(message.author.id),
+                        presentation_for(
+                            message.channel,
+                            message.content,
+                            classified.get("response_language"),
+                        ),
+                    )
                     return
                 return  # "other": not our business
 
             if any(k in lowered for k in ("fine", "status", "healthy", "everything ok")):
-                await message.channel.send(embed=await status_embed())
+                await message.channel.send(
+                    embed=await status_embed(presentation_for(message.channel, message.content))
+                )
                 return
             if any(k in lowered for k in ("down", "crash", "error", "broken", "not working", "issue")):
                 incident = incidents.create(
@@ -686,7 +737,12 @@ def make_bot(
                         severity=IncidentSeverity.P2,
                     )
                 )
-                await send_incident_card(message.channel, incident, str(message.author.id))
+                await send_incident_card(
+                    message.channel,
+                    incident,
+                    str(message.author.id),
+                    presentation_for(message.channel, message.content),
+                )
                 return
 
         await bot.process_commands(message)
@@ -695,7 +751,7 @@ def make_bot(
     @app_commands.guild_only()
     async def status(interaction: discord.Interaction) -> None:
         await interaction.response.defer()
-        await interaction.followup.send(embed=await status_embed())
+        await interaction.followup.send(embed=await status_embed(presentation_for(interaction.channel)))
 
     @bot.tree.command(name="approve", description="Approve and run the restart runbook for an incident")
     @app_commands.guild_only()
@@ -721,6 +777,7 @@ def make_bot(
             str(interaction.user.id),
             role,
             approved=True,
+            presentation=presentation_for(interaction.channel),
         )
 
     @bot.tree.command(name="triage", description="Create an incident for a monitored service")
@@ -733,6 +790,43 @@ def make_bot(
         await interaction.response.send_message(
             f"Incident `{incident.id}` created for `{incident.service}`. Status: `{incident.status.value}`."
         )
+
+    pocketsre_group = app_commands.Group(name="pocketsre", description="PocketSRE preferences and help")
+
+    @pocketsre_group.command(name="avatar", description="View or change this server's PocketSRE persona")
+    @app_commands.guild_only()
+    @app_commands.describe(persona="kiwi or vikram; omit to view the active persona")
+    async def avatar(interaction: discord.Interaction, persona: str | None = None) -> None:
+        guild_id = interaction.guild_id
+        if guild_id is None:
+            await interaction.response.send_message("This setting is available in a server.", ephemeral=True)
+            return
+        if persona is None:
+            active = guild_personas.get(guild_id, configured_persona)
+            await interaction.response.send_message(
+                f"Active persona: **{active.value.title()}**. Ordinary messages use it automatically.",
+                ephemeral=True,
+            )
+            return
+        try:
+            selected = Persona(persona.lower())
+        except ValueError:
+            await interaction.response.send_message("Choose `kiwi` or `vikram`.", ephemeral=True)
+            return
+        guild_personas[guild_id] = selected
+        await interaction.response.send_message(
+            f"Persona set to **{selected.value.title()}**. Language mirroring remains automatic.",
+            ephemeral=True,
+        )
+
+    @pocketsre_group.command(name="help", description="Show PocketSRE language and persona behavior")
+    @app_commands.guild_only()
+    async def persona_help(interaction: discord.Interaction) -> None:
+        await interaction.response.send_message(
+            presentation_for(interaction.channel).help_text(), ephemeral=True
+        )
+
+    bot.tree.add_command(pocketsre_group)
 
     return bot
 

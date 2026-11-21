@@ -7,6 +7,7 @@ keyword heuristics as the deterministic path.
 import json
 
 from app.ai.router import LLMRouter
+from app.persona.presentation import detect_language, language_from
 
 _SERVICES = "yuki-core-api, yuki-discord-bot, yuki-telegram-bot, yuki-horiz-client, yuki-redis"
 
@@ -17,7 +18,8 @@ Classify this Discord message into strict JSON:
 {{"intent": "status" | "incident" | "other",
  "service": one of the services or "unknown",
  "severity_hint": "P1" | "P2" | "P3" | "P4",
- "summary": "one-line operator-facing summary"}}
+ "summary": "one-line operator-facing summary in the user's language/style",
+ "response_language": "english" | "hindi" | "malayalam" | "hinglish" | "manglish"}}
 
 - "status" = asking whether systems are healthy.
 - "incident" = reporting a concrete problem.
@@ -53,6 +55,12 @@ async def classify_message(
         data = json.loads(text)
         if data.get("intent") not in ("status", "incident", "other"):
             return None
+        # The renderer consumes this metadata only; it cannot affect intent,
+        # service selection, or the typed runbook request built by the bot.
+        fallback_language = detect_language(message)
+        data["response_language"] = language_from(
+            data.get("response_language"), fallback_language
+        ).value
         return data
     except Exception:
         return None

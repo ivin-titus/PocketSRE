@@ -35,6 +35,7 @@
 | **Mission-control page** (overview, health, spend, SSE) | ✅ Done | `/console/mission-control.html` — operational overview with top summary metrics (overall system state, monitored services status breakdown, open incidents count, spend); compact health cards distinguishing Healthy, Degraded, Unreachable, No Coverage, and Not Configured with collapsible payload details; spend governor display replacing nulls with "Not configured" / "—" (never `$null`); live SSE audit feed with empty state |
 | **Knowledge upload + injection into triage** | ✅ Done | `POST /api/knowledge/upload` (admin-secret gated, .md/.txt ≤256KB) → `infra_knowledge_docs` in Neon; `load_infra_context(db)` is DB-first, `docs/infra/` is the sanitized public fallback; injected into every triage prompt. Repo docs scrubbed of IP/key names (repo is public) — real topology goes via upload only. `/pocketsre learn-infra` deferred (upload API covers it) |
 | **Gemini + OpenAI client wiring** | ✅ Done | `ai/clients/gemini.py` + `ai/clients/openai.py` (Yuki ports adapted to LLMProvider), `ai/factory.py` picks provider via `AI_PROVIDER`; wired into reactive triage |
+| **Text personas + language mirroring** | ✅ Done | Presentation-only Kiwi/Vikram profiles, server default/`/pocketsre avatar`, automatic English/Hindi/Malayalam/Hinglish/Manglish detection and deterministic fallback; no change to typed actions, RBAC, approval, or SSH execution. Voice remains deferred. |
 | `scripts/inject_mock_incident.sh` | ✅ Done | Air-gapped trigger POSTs crafted crash/bug/socket-lock incidents to `/api/incidents`; verified against the container |
 
 **Phase readiness:** Phase 1 ≈ 85% · Phase 2 (voice notes/code-mixing) = 0% · Phase 3 (live voice) = 0%
@@ -51,7 +52,7 @@
 
 **Surfaces (all three):**
 - Discord slash commands (`/status`, `/triage`, `/approve`, `/actions`)
-- Discord free-text messages (natural language triage; code-mixed Manglish/Hinglish inputs tolerated — language mirroring deferred to Phase 2)
+- Discord free-text messages (natural language triage plus automatic text-language mirroring; voice mirroring remains Phase 2)
 - Signed magic-link web console (incident console + mission-control page)
 
 **Autonomy modes** (`AUTONOMY_MODE`, replacing current `autonomy_mode` semantics):
@@ -159,7 +160,7 @@ detect → investigate → run fixing runbook (e.g. restart) → transparent rep
 6. Loop guard escalates a locked-socket incident to a dossier after 3 trials — no infinite retry.
 7. `make test` equivalent (`pytest tests/`) passes; `visudo -cf` clean on any sudoers change.
 
-## 6. Planned — Persona-aware multilingual interaction (text first, voice later)
+## 6. Text persona and multilingual interaction (text complete; voice later)
 
 This is a presentation-layer capability. It must not duplicate or alter incident policy, tool selection, RBAC, approval, autonomy, budget, loop-guard, audit, or SSH execution logic.
 
@@ -179,23 +180,56 @@ This is a presentation-layer capability. It must not duplicate or alter incident
 
 ### 6.3 Shared response-rendering layer
 
-- Add persona definitions and a renderer that consumes structured incident/action results and emits channel-neutral response content.
-- Discord embeds, ordinary text replies, web-console labels, and future voice output should consume that same rendered response model.
-- Add `/pocketsre avatar kiwi|vikram`, `/pocketsre avatar`, and `/help`; ordinary messages use the active/default persona automatically.
+- ✅ Persona definitions and a renderer consume structured incident/action results without modifying them.
+- ✅ Discord embeds and ordinary text replies consume that response model; web-console labels can be added without changing the incident core.
+- ✅ `/pocketsre avatar kiwi|vikram`, `/pocketsre avatar`, and `/pocketsre help` are available; ordinary messages use the active/default persona automatically.
 - Store the initial selection in memory or configuration; add Neon persistence only if cross-restart/guild preferences are needed.
 - Provide deterministic Kiwi and Vikram templates for provider failures so persona behavior remains stable when the LLM is unavailable.
 
 ### 6.4 Verification requirements
 
-- Fixture tests for English, Hindi, Malayalam, Hinglish, Manglish, and mixed messages.
-- Persona snapshot/contract tests proving presentation differs while generated tool calls, parameters, permissions, and approval requirements remain identical.
+- ✅ Fixture tests cover English, Hindi, Malayalam, Hinglish, and Manglish detection.
+- ✅ Persona contract tests prove presentation differs while generated tool calls and action contracts remain identical.
 - Tests proving ordinary messages resolve the active persona without requiring a persona handle.
 - Budget tests proving text mirroring does not call Sarvam or Smallest.
 - Docker test run remains the source of truth before marking this capability complete.
 
-### 6.5 Voice integration after text stability
+### 6.5 Track 02 voice scope — Sarvam-first, provider-neutral
 
-- Reuse the same persona and language metadata for voice-note STT and optional TTS; do not move incident logic into speech providers.
-- Add Sarvam/Smallest behind provider interfaces with mock fixtures, per-incident rate limits, caching, and separate budget caps.
-- Keep text as the default response path; generate audio only for voice workflows or explicit requests.
-- Treat live voice channels as a later milestone after voice notes are stable and verified.
+**Goal:** complete the Track 02 promise without coupling speech providers to incident policy. Sarvam is the primary Indic speech provider; Smallest and edge-TTS are optional fallback/output providers. The existing text persona/language profile is the canonical shared input to this layer.
+
+**Milestone V1 — Discord voice notes (first shippable voice feature)**
+
+- Accept Discord audio attachments only (`.ogg`, `.mp3`, `.m4a`, `.wav`) with explicit size and duration limits.
+- Normalize supported input to the provider-required PCM format with FFmpeg in a bounded temporary workspace; reject unsupported/oversized files before an API call.
+- `SpeechToTextProvider.transcribe(audio, language_hint)` returns transcript plus detected language/style. Implement `SarvamSpeechProvider` first for English, Hindi, Malayalam, Hinglish, and Manglish.
+- Feed only the transcript and `Language` metadata into the existing text triage/rendering path; no speech provider may select a tool, construct a command, approve an action, or bypass RBAC.
+- Reply with the existing text/embed result. Generate an audio response only when the user supplied voice or explicitly requests a spoken reply.
+
+**Milestone V2 — persona-aware TTS**
+
+- `TextToSpeechProvider.synthesize(text, persona, language)` uses the shared Kiwi/Vikram persona metadata for voice choice, rate, and prosody.
+- Kiwi is warm and reassuring; Vikram is measured and formal. This changes delivery only, never the factual incident/action content.
+- Sarvam TTS is primary for Malayalam/Hindi and code-mixed output. Use edge-TTS as the no-credit fallback where a suitable voice is available; Smallest remains an optional secondary provider, not a mandatory dependency.
+- Never synthesize logs, raw command output, secrets, or long audit entries. Spoken results are short summaries plus a link/card for exact details.
+
+**Milestone V3 — live Discord voice channel (only after V1/V2 are stable)**
+
+- Join an explicitly requested incident voice channel; do not auto-join general channels.
+- Use bounded turn-taking/VAD, a short transcript confirmation for destructive requests, and text-card approval for every mutation.
+- On packet loss, STT/TTS failure, timeout, or exhausted budget, fall back to the text conversation and magic-link console without losing the incident state.
+
+**Cost, privacy, and safety controls (required before real API calls)**
+
+- Separate `speech_stt` and `speech_tts` budget ledger entries; enforce provider and per-incident caps before each call.
+- Add per-user and per-incident rate limits, a maximum audio duration, response-audio caching keyed by sanitized text/persona/language, and `MOCK_SPEECH=true` fixture mode.
+- Do not persist source audio by default. Retain only the minimum transcript/audit metadata necessary for incident traceability; redact secrets before provider submission where possible.
+- Keep speech credentials in deployment `.env` only (`POCKETSRE_SARVAM_API_KEY`, optional fallback key); no keys, recordings, or real topology in the repository.
+
+**Track 02 definition of done**
+
+1. A Malayalam, Hindi, Hinglish, or Manglish voice note produces a correct transcript and a mirrored Kiwi/Vikram text response.
+2. A request that proposes a mutation still creates the same typed action and lead approval gate as its equivalent text message.
+3. Optional TTS speaks a concise persona-aligned response; API outage or budget exhaustion falls back to text without failing the incident flow.
+4. Docker tests use mocked speech fixtures—no paid credits—and cover transcript language metadata, provider failure, budget lockout, and tool-call invariance.
+5. Live voice is only marked complete after a real Discord channel smoke test proves join, receive, STT, TTS, text fallback, and clean disconnect behavior.

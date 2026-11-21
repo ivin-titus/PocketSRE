@@ -83,6 +83,7 @@ class Settings(BaseSettings):
     decision_provider: str = "gemini_decision"  # gemini_decision | local | keywords
     decision_model: str = "gemini-decision-1"
     decision_base_url: str | None = None  # local decision model endpoint (Laya/Ollama-class)
+    persona_default: str = "kiwi"  # kiwi | vikram; presentation only
 
 
     @property

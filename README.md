@@ -34,13 +34,12 @@ Engineering incidents strike at the worst moments—while commuting, traveling o
 
 ## ✨ Key Features & Differentiators
 
-### 1. 🎙️ Track 02 Voice & Mirroring Engine
-* **Multimodal Discord Audio:** Intercepts audio voice notes (`.ogg`) and live voice channels.
-* **Sarvam AI Audio Stack:** Sub-second speech transcription via `saaras:v4` and lifelike Indic speech synthesis via `bulbul:v3` / `bulbul:v4-flash`.
-* **Zero-Cost Edge Fallback:** Seamlessly shifts to Microsoft `edge-tts` (`en-IN-PrabhatNeural`, `ml-IN-SobhanaNeural`, `hi-IN-SwaraNeural`) if API quotas expire.
+### 1. 🎙️ Track 02 Text Mirroring Engine (voice next)
+* **Automatic text mirroring:** Detects and mirrors English, Hindi, Malayalam, Hinglish, and Manglish in normal Discord triage messages.
+* **Voice roadmap:** Sarvam STT/TTS and edge-TTS fallback remain Phase 2 work, isolated from the text and incident-control path.
 
 ### 2. 🎭 Dual-Avatar Persona Architecture
-Toggle personalities instantly via Discord (`/pocketsre avatar kiwi` or `/pocketsre avatar vikram`):
+Set a server persona via Discord (`/pocketsre avatar kiwi` or `/pocketsre avatar vikram`); ordinary messages use it automatically:
 * **Kiwi (Kiwi-chan):** Empathetic, warm, playful companion (*"Daijoubu Senpai! Yuki crashed, but I grabbed the logs. Should I restart it?"*). Purpose-built to lower adrenaline and panic during 2 AM outages.
 * **Vikram:** Crisp, objective, formal senior enterprise SRE lead (*"Incident 501: Container yuki-core-api terminated by kernel OOM. Recommending immediate restart."*).
 
@@ -243,6 +242,7 @@ POCKETSRE_OPENAI_BASE_URL=""
 POCKETSRE_OPENAI_MODEL="gpt-4o-mini"
 POCKETSRE_SARVAM_API_KEY=""        # Phase 2 — metered credits (500)
 POCKETSRE_SMALLEST_AI_API_KEY=""   # Phase 2 — metered credits ($60)
+POCKETSRE_PERSONA_DEFAULT="kiwi"  # kiwi | vikram; text presentation only
 
 # Infrastructure & Console
 POCKETSRE_TARGET_SSH_HOST="<YUKI_VM_IP>"

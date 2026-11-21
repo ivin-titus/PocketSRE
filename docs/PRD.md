@@ -71,7 +71,7 @@ PocketSRE provides 3 distinct operational modes to match the responder's connect
    * *Safety Fallback:* If mobile UDP cellular latency causes packet jitter, PocketSRE gracefully defers to Mode B voice notes.
 
 #### Universal Linguistic Flexibility (Pure English, Pure Indic & Adaptive Code-Mixing)
-PocketSRE provides complete linguistic freedom across all interaction modes. Pure languages—**especially English** as the primary industry-standard medium for DevOps—are fully supported as first-class citizens. Code-mixing is an adaptive conversational feature, not a forced dependency:
+PocketSRE provides complete linguistic freedom across all interaction modes. Pure languages—**especially English** as the primary industry-standard medium for DevOps—are fully supported as first-class citizens. The Phase 1 text surface mirrors English, Hindi, Malayalam, Hinglish, and Manglish through its presentation layer; Sarvam speech input/output remains the later voice phase. Code-mixing is an adaptive conversational feature, not a forced dependency:
 * **Pure English In $\rightarrow$ Pure English Out (Core DevOps Standard):** Professional, concise SRE briefings synthesized via `bulbul:v4-flash` (`en-IN` / `shubh_enhi_ads`) or `en-IN-PrabhatNeural`. For responders speaking standard English, PocketSRE operates 100% in pure English with zero unwanted code-mixing.
 * **Pure Malayalam In $\rightarrow$ Pure Malayalam Out:** Fluent native Malayalam incident alerts and diagnostics synthesized via `bulbul:v3` (`target_language_code="ml-IN"`, speaker: `priya` or `shubh`).
 * **Pure Hindi In $\rightarrow$ Pure Hindi Out:** Formal, boardroom-ready Hindi incident reports synthesized via `bulbul:v4-flash` or `bulbul:v3` (`hi-IN`).

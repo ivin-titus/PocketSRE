@@ -111,6 +111,7 @@ async def lifespan(app: FastAPI):
                 decision_base_url=settings.decision_base_url,
                 decision_model=settings.decision_model,
                 gemini_api_key=settings.gemini_keys[0] if settings.gemini_keys else None,
+                default_persona=settings.persona_default,
             ),
             name="pocketsre-discord",
         )

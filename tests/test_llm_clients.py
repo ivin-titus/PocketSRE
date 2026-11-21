@@ -177,6 +177,17 @@ def test_classify_message_parses_json() -> None:
     out = run(classify_message(router, "prod api is down!!"))
     assert out["intent"] == "incident"
     assert out["severity_hint"] == "P1"
+    assert out["response_language"] == "english"
+
+
+def test_classify_message_falls_back_to_detected_manglish_language() -> None:
+    class FakeProvider:
+        async def generate(self, **kw):
+            return '{"intent": "incident", "service": "yuki-core-api", "severity_hint": "P2", "summary": "issue"}'
+
+    router = LLMRouter(FakeProvider(), KeyPool(["k"]), "m")
+    out = run(classify_message(router, "core api down aayi, onnu nokk"))
+    assert out["response_language"] == "manglish"
 
 
 def test_classify_message_bad_json_returns_none() -> None:
