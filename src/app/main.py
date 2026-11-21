@@ -56,6 +56,7 @@ async def lifespan(app: FastAPI):
                 public_base_url=settings.public_base_url,
                 magic_link_secret=settings.magic_link_secret,
                 autonomy_mode=settings.autonomy_mode,
+                devin_api_key=settings.devin_api_key,
             ),
             name="pocketsre-discord",
         )

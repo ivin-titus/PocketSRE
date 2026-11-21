@@ -5,7 +5,9 @@ import contextlib
 
 from app.actions.service import ActionService
 from app.incidents.alerts import AlertBridge, AlertEvent
+from app.incidents.presence import ROUTE_CONTAINER_DEFAULTS
 from app.incidents.service import IncidentService
+from app.swe.dispatch import DevinDispatcher
 from app.shared.contracts import (
     ActionRequest,
     ActionResult,
@@ -43,7 +45,7 @@ def truncate(text: str, limit: int = DISCORD_FIELD_LIMIT) -> str:
     return text if len(text) <= limit else text[: limit - 3] + "..."
 
 
-def alert_embed(incident: Incident, console_url: str | None):
+def alert_embed(incident: Incident, console_url: str | None, autonomy_mode: str = "strict_confirmation"):
     """Card proposing the allowed next steps for a proactive/reactive alert."""
     import discord
 
@@ -54,9 +56,10 @@ def alert_embed(incident: Incident, console_url: str | None):
     )
     embed.add_field(name="Incident", value=f"`{incident.id}`", inline=True)
     embed.add_field(name="Source", value=incident.source, inline=True)
+    embed.add_field(name="Mode", value=f"`{autonomy_mode}`", inline=True)
     embed.add_field(
         name="Allowed next steps",
-        value="`Fetch logs` / `Inspect` run free · `Restart` needs a lead",
+        value="`Fetch logs` / `Inspect` run free · `Restart` needs a lead · `Dispatch Devin` for code fixes",
         inline=False,
     )
     if console_url:
@@ -99,6 +102,7 @@ def make_bot(
     public_base_url: str = "",
     magic_link_secret: str = "",
     autonomy_mode: str = "strict_confirmation",
+    devin_api_key: str | None = None,
 ):
     """Create the Discord adapter lazily so HTTP-only development needs no bot token."""
     import discord
@@ -141,6 +145,58 @@ def make_bot(
         await channel.send(embed=report_embed(result))
         return result
 
+    dispatcher = DevinDispatcher(devin_api_key)
+
+    async def status_embed():
+        """Live presence snapshot + open incidents + spend placeholder."""
+        lines: list[str] = []
+        if actions.presence is not None:
+            for route, container in ROUTE_CONTAINER_DEFAULTS.items():
+                reasons = await asyncio.to_thread(actions.presence.health_reasons, container)
+                if reasons is None:
+                    mark = "❔ no coverage"
+                elif reasons:
+                    mark = "⚠️ " + "; ".join(reasons)
+                else:
+                    mark = "✅"
+                lines.append(f"**{route}** ({container}): {mark}")
+        open_incidents = [
+            i for i in incidents.list_all() if i.status.value in ("open", "triaged")
+        ]
+        embed = discord.Embed(
+            title="PocketSRE — live presence",
+            description="\n".join(lines) or "Presence probe not configured.",
+            color=discord.Color.blue(),
+        )
+        embed.add_field(name="Open incidents", value=str(len(open_incidents)), inline=True)
+        embed.add_field(name="Mode", value=f"`{autonomy_mode}`", inline=True)
+        return embed
+
+    async def _approve_text_path(message: discord.Message) -> None:
+        """`@PocketSRE approve <incident-id>` — text approval for the restart runbook."""
+        words = message.content.split()
+        incident = next(
+            (
+                i
+                for i in incidents.list_all()
+                if i.status.value in ("open", "triaged")
+                and (len(words) < 3 or str(i.id).startswith(words[-1]))
+            ),
+            None,
+        )
+        if incident is None:
+            await message.channel.send("No active incident matched — pass an incident id prefix.")
+            return
+        role = actor_role_for(member_role_names(message.author))
+        await run_action(
+            message.channel,
+            incident,
+            RunbookAction.RESTART_SERVICE,
+            str(message.author.id),
+            role,
+            approved=True,
+        )
+
     class IncidentApprovalView(discord.ui.View):
         def __init__(self, incident: Incident) -> None:
             super().__init__(timeout=600)
@@ -170,6 +226,18 @@ def make_bot(
         async def restart(self, interaction: discord.Interaction, _button) -> None:
             await self._dispatch(interaction, RunbookAction.RESTART_SERVICE, approved=True)
 
+        @discord.ui.button(label="Dispatch Devin fix", style=discord.ButtonStyle.primary)
+        async def dispatch_devin(self, interaction: discord.Interaction, _button) -> None:
+            role = actor_role_for(member_role_names(interaction.user))
+            if role is not ActorRole.LEAD:
+                await interaction.response.send_message(
+                    "⛔ Dispatching Devin requires a lead role.", ephemeral=True
+                )
+                return
+            await interaction.response.defer()
+            note = await asyncio.to_thread(dispatcher.dispatch, self.incident)
+            await interaction.channel.send(note)
+
         @discord.ui.button(label="Deny", style=discord.ButtonStyle.secondary)
         async def deny(self, interaction: discord.Interaction, button) -> None:
             await interaction.response.send_message("Denied — no action taken.", ephemeral=True)
@@ -186,7 +254,7 @@ def make_bot(
             incident = event.incident
             if event.kind == "opened":
                 await channel.send(
-                    embed=alert_embed(incident, console_url(incident, "lead")),
+                    embed=alert_embed(incident, console_url(incident, "lead"), autonomy_mode),
                     view=IncidentApprovalView(incident),
                 )
                 if autonomy_mode == "full_autonomy":
@@ -213,9 +281,8 @@ def make_bot(
         if message.author == bot.user:
             return
 
-        is_alert_channel = alert_channel_id is not None and message.channel.id == alert_channel_id
         is_webhook = message.webhook_id is not None
-        if is_alert_channel or is_webhook:
+        if is_webhook:
             content = message.content or ""
             for embed in message.embeds:
                 if embed.title:
@@ -255,12 +322,64 @@ def make_bot(
                     await message.channel.send(
                         f"🚨 **PocketSRE Alert Ingested**: Incident `{incident.id}` opened for `{incident.service}`. Initiating triage..."
                     )
+            await bot.process_commands(message)
+            return
+
+        # Reactive path: a human pings the bot or reports an issue in a guild channel.
+        if bot.user in message.mentions or "pocketsre" in message.content.lower():
+            lowered = message.content.lower()
+            if "approve" in lowered:
+                await _approve_text_path(message)
+                return
+            if any(k in lowered for k in ("fine", "status", "healthy", "everything ok")):
+                await message.channel.send(embed=await status_embed())
+                return
+            if any(k in lowered for k in ("down", "crash", "error", "broken", "not working", "issue")):
+                incident = incidents.create(
+                    IncidentCreate(
+                        source="discord_reactive",
+                        service="yuki-core-api",
+                        summary=message.content[:500],
+                        severity=IncidentSeverity.P2,
+                    )
+                )
+                await message.channel.send(
+                    embed=alert_embed(incident, console_url(incident, str(message.author.id)), autonomy_mode),
+                    view=IncidentApprovalView(incident),
+                )
+                return
 
         await bot.process_commands(message)
 
-    @bot.tree.command(name="status", description="Show PocketSRE control-plane status")
+    @bot.tree.command(name="status", description="Show live presence + open incidents")
     async def status(interaction: discord.Interaction) -> None:
-        await interaction.response.send_message("PocketSRE control plane is online.", ephemeral=True)
+        await interaction.response.defer()
+        await interaction.followup.send(embed=await status_embed())
+
+    @bot.tree.command(name="approve", description="Approve and run the restart runbook for an incident")
+    @app_commands.describe(incident_id="Incident id (or its prefix)")
+    async def approve(interaction: discord.Interaction, incident_id: str) -> None:
+        incident = next(
+            (
+                i
+                for i in incidents.list_all()
+                if i.status.value in ("open", "triaged") and str(i.id).startswith(incident_id)
+            ),
+            None,
+        )
+        if incident is None:
+            await interaction.response.send_message("No active incident matched.", ephemeral=True)
+            return
+        role = actor_role_for(member_role_names(interaction.user))
+        await interaction.response.defer()
+        await run_action(
+            interaction.channel,
+            incident,
+            RunbookAction.RESTART_SERVICE,
+            str(interaction.user.id),
+            role,
+            approved=True,
+        )
 
     @bot.tree.command(name="triage", description="Create an incident for a monitored service")
     @app_commands.describe(service="Allowed target service", summary="What is failing")
@@ -284,6 +403,7 @@ async def run_discord_bot(
     public_base_url: str = "",
     magic_link_secret: str = "",
     autonomy_mode: str = "strict_confirmation",
+    devin_api_key: str | None = None,
 ) -> None:
     bot = make_bot(
         incidents,
@@ -293,6 +413,7 @@ async def run_discord_bot(
         public_base_url=public_base_url,
         magic_link_secret=magic_link_secret,
         autonomy_mode=autonomy_mode,
+        devin_api_key=devin_api_key,
     )
     await bot.start(token)
 
