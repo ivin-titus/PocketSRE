@@ -35,10 +35,42 @@ SERVICE_TO_CONTAINER: dict[str, str] = {
     "yuki-telegram-bot": "yuki-telegram-bot",
     "yuki-redis": "yuki-redis",
     # Presence endpoint exposed names & backward-compatibility aliases
+    "central": "yuki-core-api",
+    "discord": "yuki-discord-bot",
+    "horiz": "yuki-horiz-client",
+    "telegram": "yuki-telegram-bot",
     "core-chat-api": "yuki-core-api",
     "yuki-core": "yuki-core-api",
     "horiz-connector": "yuki-horiz-client",
 }
+
+
+def is_action_available(action: RunbookAction, service: str) -> tuple[bool, str | None]:
+    """Check if an action is valid for the given target service, returning (available, reason)."""
+    if action is RunbookAction.SERVICE_JOURNAL:
+        if service in SERVICE_JOURNAL_UNITS:
+            return True, None
+        return (
+            False,
+            f"Journal is only supported for systemd units: {', '.join(SERVICE_JOURNAL_UNITS)} (target is '{service}')",
+        )
+
+    if action in {
+        RunbookAction.DOCKER_PS,
+        RunbookAction.DOCKER_STATS,
+        RunbookAction.DISK_PRUNE,
+        RunbookAction.NGINX_RESTART,
+        RunbookAction.NGINX_STATUS,
+        RunbookAction.NGINX_TEST,
+        RunbookAction.DOCKER_DAEMON_STATUS,
+    }:
+        return True, None
+
+    try:
+        resolve_container_name(service)
+        return True, None
+    except ValueError as exc:
+        return False, str(exc)
 
 
 def resolve_container_name(service: str) -> str:

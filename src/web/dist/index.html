@@ -3,14 +3,40 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>PocketSRE Console</title>
-    <link rel="stylesheet" href="styles.css" />
+    <title>PocketSRE — Incident Console</title>
+    <link rel="stylesheet" href="styles.css?v=3" />
   </head>
   <body>
-    <main id="app">
-      <h1>PocketSRE</h1>
-      <p>Signed incident console loading…</p>
-    </main>
-    <script type="module" src="console.js"></script>
+    <div id="app" class="container">
+      <div class="panel">
+        <p style="color: var(--text-secondary);">Signed incident console loading…</p>
+      </div>
+    </div>
+
+    <!-- Confirmation Modal for Destructive / Mutating Actions -->
+    <div id="confirmModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modalActionTitle">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3 class="modal-title" id="modalActionTitle">
+            <span>⚠️</span>
+            <span id="modalActionTitleText">Confirm Mutating Action</span>
+          </h3>
+          <button type="button" class="modal-close-btn" id="modalCloseXBtn" aria-label="Close dialog">✕</button>
+        </div>
+        <div class="modal-body">
+          <p id="modalActionTarget" style="font-size: 0.9375rem; color: var(--text-main);"></p>
+          <div class="modal-warning" id="modalActionWarning"></div>
+          <p style="font-size: 0.8125rem; color: var(--text-muted); line-height: 1.4;">
+            This lifecycle action will directly mutate the remote production service and record an immutable entry in the SRE audit trail.
+          </p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" id="modalCancelBtn" class="btn-secondary">Cancel (Esc)</button>
+          <button type="button" id="modalConfirmBtn" class="btn-danger">Confirm & Execute</button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="console.js?v=3"></script>
   </body>
 </html>

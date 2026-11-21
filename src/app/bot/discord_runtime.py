@@ -58,7 +58,8 @@ def alert_embed(incident: Incident, console_url: str | None, autonomy_mode: str 
         inline=False,
     )
     if console_url:
-        embed.add_field(name="Console", value=console_url, inline=False)
+        embed.add_field(name="Durable Console Link", value=console_url, inline=False)
+    embed.set_footer(text="Interactive buttons expire in 10m · Console link remains active")
     return embed
 
 
@@ -252,67 +253,167 @@ def make_bot(
         def __init__(self, incident: Incident) -> None:
             super().__init__(timeout=600)
             self.incident = incident
+            self.message: discord.Message | None = None
+
+        async def _refresh_card(self) -> None:
+            """Best-effort component refresh; a deleted Discord message is not fatal."""
+            if self.message is None:
+                return
+            with contextlib.suppress(discord.HTTPException, discord.NotFound):
+                await self.message.edit(view=self)
+
+        async def on_timeout(self) -> None:
+            """Never leave a stale card looking actionable after Discord's view timeout."""
+            for child in self.children:
+                child.disabled = True
+            if self.message is None:
+                return
+            embed = self.message.embeds[0] if self.message.embeds else None
+            if embed is not None:
+                embed.set_footer(text="Controls expired — use the Console link or /approve <incident id>.")
+            with contextlib.suppress(discord.HTTPException, discord.NotFound):
+                await self.message.edit(embed=embed, view=self)
+
+        async def on_error(
+            self, interaction: discord.Interaction, error: Exception, _item: discord.ui.Item
+        ) -> None:
+            """Acknowledge callback failures instead of leaving Discord's generic red banner."""
+            message = (
+                f"⚠️ PocketSRE could not process that action ({error}).\n"
+                "**Next steps:**\n"
+                "• Retry the button\n"
+                "• Open the Console link from the card above\n"
+                f"• Run `/approve {str(self.incident.id)[:8]}` from chat\n"
+                "• Contact the on-call lead"
+            )
+            if interaction.response.is_done():
+                await interaction.followup.send(message, ephemeral=True)
+            else:
+                await interaction.response.send_message(message, ephemeral=True)
 
         async def _dispatch(
             self,
             interaction: discord.Interaction,
             action: RunbookAction,
             approved: bool,
+            button: discord.ui.Button,
         ) -> None:
             role = actor_role_for(member_role_names(interaction.user), role_permissions)
-            await interaction.response.defer()
-            await run_action(
+            # Acknowledge before SSH work.  The ephemeral status prevents Discord's
+            # "Interaction failed" banner while the channel receives the audit report.
+            await interaction.response.defer(ephemeral=True, thinking=True)
+            original_label = button.label
+            button.label = "Working…"
+            button.disabled = True
+            await self._refresh_card()
+            await interaction.edit_original_response(
+                content=f"⏳ Running `{action.value}` for `{self.incident.service}`. Remote action may take up to 30 seconds."
+            )
+            result = await run_action(
                 interaction.channel, self.incident, action, str(interaction.user.id), role, approved
+            )
+            button.label = original_label
+            button.disabled = False
+            await self._refresh_card()
+            if result is None:
+                await interaction.edit_original_response(
+                    content=(
+                        f"⚠️ `{action.value}` did not complete or was halted.\n"
+                        "**Next steps:**\n"
+                        "• Retry the action\n"
+                        "• Open the Console link below for full incident record & diagnostics\n"
+                        f"• Use `/approve {str(self.incident.id)[:8]}` from chat\n"
+                        "• Contact the on-call lead if manual intervention is needed"
+                    )
+                )
+                return
+            await interaction.edit_original_response(
+                content=(
+                    f"✅ `{action.value}` completed with status `{result.status}`.\n"
+                    "The full audit report has been posted to this channel."
+                )
             )
 
         @discord.ui.button(label="Fetch logs", style=discord.ButtonStyle.secondary)
-        async def fetch_logs(self, interaction: discord.Interaction, _button) -> None:
-            await self._dispatch(interaction, RunbookAction.FETCH_SERVICE_LOGS, approved=True)
+        async def fetch_logs(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+            await self._dispatch(interaction, RunbookAction.FETCH_SERVICE_LOGS, approved=True, button=button)
 
         @discord.ui.button(label="Inspect", style=discord.ButtonStyle.secondary)
-        async def inspect(self, interaction: discord.Interaction, _button) -> None:
-            await self._dispatch(interaction, RunbookAction.INSPECT_SERVICE, approved=True)
+        async def inspect(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+            await self._dispatch(interaction, RunbookAction.INSPECT_SERVICE, approved=True, button=button)
 
         @discord.ui.button(label="Approve & Restart", style=discord.ButtonStyle.danger)
-        async def restart(self, interaction: discord.Interaction, _button) -> None:
-            await self._dispatch(interaction, RunbookAction.RESTART_SERVICE, approved=True)
+        async def restart(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+            await self._dispatch(interaction, RunbookAction.RESTART_SERVICE, approved=True, button=button)
 
         @discord.ui.button(label="Dispatch Devin fix", style=discord.ButtonStyle.primary)
-        async def dispatch_devin(self, interaction: discord.Interaction, _button) -> None:
+        async def dispatch_devin(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
             role = actor_role_for(member_role_names(interaction.user), role_permissions)
             if role is not ActorRole.LEAD:
                 await interaction.response.send_message(
-                    "⛔ Dispatching Devin requires a lead role.", ephemeral=True
+                    "⛔ Dispatching Devin requires a lead role.\n"
+                    "**Next steps:** Request approval from an on-call lead or use the Console link.",
+                    ephemeral=True,
                 )
                 return
-            await interaction.response.defer()
-            if any(w["incident"].id == self.incident.id for w in pr_watches):
-                await interaction.channel.send(
-                    f"🤖 Devin already dispatched for `{self.incident.id}` — watching its PR."
-                )
-                return
-            if budget is not None:
-                try:
-                    budget.check("devin", self.incident.id)
-                except BudgetExhaustedError as exc:
-                    await interaction.channel.send(f"💸 Devin dispatch blocked: {exc}")
+            await interaction.response.defer(ephemeral=True, thinking=True)
+            original_label = button.label
+            button.label = "Working…"
+            button.disabled = True
+            await self._refresh_card()
+            await interaction.edit_original_response(
+                content=f"⏳ Dispatching Devin autonomous fix for `{self.incident.service}`. This may take up to 30 seconds."
+            )
+            try:
+                if any(w["incident"].id == self.incident.id for w in pr_watches):
+                    await interaction.edit_original_response(
+                        content=f"🤖 Devin already dispatched for `{self.incident.id}` — watching its PR."
+                    )
                     return
-            note = await asyncio.to_thread(dispatcher.dispatch, self.incident)
-            await interaction.channel.send(note)
-            if budget is not None:
-                budget.record("devin", devin_session_cost_usd, self.incident.id)
-            if dispatcher._last_session_id:
-                pr_watches.append(
-                    {
-                        "incident": self.incident,
-                        "session_id": dispatcher._last_session_id,
-                        "channel": interaction.channel,
-                        "pr_url": None,
-                        "dispatched_at": time.monotonic(),
-                        "reminded": False,
-                    }
+                if budget is not None:
+                    try:
+                        budget.check("devin", self.incident.id)
+                    except BudgetExhaustedError as exc:
+                        await interaction.edit_original_response(
+                            content=(
+                                f"💸 Devin dispatch blocked: {exc}\n"
+                                "**Next steps:** Open the Console to review spend or contact the lead."
+                            )
+                        )
+                        return
+                note = await asyncio.to_thread(dispatcher.dispatch, self.incident)
+                await interaction.channel.send(note)
+                if budget is not None:
+                    budget.record("devin", devin_session_cost_usd, self.incident.id)
+                if dispatcher._last_session_id:
+                    pr_watches.append(
+                        {
+                            "incident": self.incident,
+                            "session_id": dispatcher._last_session_id,
+                            "channel": interaction.channel,
+                            "pr_url": None,
+                            "dispatched_at": time.monotonic(),
+                            "reminded": False,
+                        }
+                    )
+                    dispatcher._last_session_id = None
+                await interaction.edit_original_response(
+                    content=f"✅ Devin session started successfully for `{self.incident.service}`."
                 )
-                dispatcher._last_session_id = None
+            except Exception as exc:
+                await interaction.edit_original_response(
+                    content=(
+                        f"⚠️ Devin dispatch failed: {exc}\n"
+                        "**Next steps:**\n"
+                        "• Retry dispatching Devin\n"
+                        "• Open the Console link to inspect incident details\n"
+                        "• Contact the lead engineer"
+                    )
+                )
+            finally:
+                button.label = original_label
+                button.disabled = False
+                await self._refresh_card()
             if tracker is not None:
                 refs = await asyncio.to_thread(
                     tracker.create_issue,
@@ -335,21 +436,34 @@ def make_bot(
         async def deny(self, interaction: discord.Interaction, button) -> None:
             await interaction.response.send_message("Denied — no action taken.", ephemeral=True)
             button.disabled = True
+            await self._refresh_card()
+
+    async def send_incident_card(
+        channel: discord.abc.Messageable, incident: Incident, actor_id: str
+    ) -> None:
+        """Keep a message reference so timed-out controls can be visibly retired."""
+        view = IncidentApprovalView(incident)
+        view.message = await channel.send(
+            embed=alert_embed(incident, console_url(incident, actor_id), autonomy_mode), view=view
+        )
 
     async def alert_consumer() -> None:
         """Proactive loop: detection event → card → optional auto-run → report → summary."""
         await bot.wait_until_ready()
         channel = bot.get_channel(alert_channel_id) if alert_channel_id else None
+        if channel is None and alert_channel_id:
+            try:
+                channel = await bot.fetch_channel(alert_channel_id)
+            except Exception as exc:
+                print(f"[ALERT CONSUMER] Could not fetch channel {alert_channel_id}: {exc}")
         if channel is None:
+            print(f"[ALERT CONSUMER] Alert channel {alert_channel_id} not available; alert loop stopped.")
             return
         while True:
             event: AlertEvent = await alerts.next()
             incident = event.incident
             if event.kind == "opened":
-                await channel.send(
-                    embed=alert_embed(incident, console_url(incident, "lead"), autonomy_mode),
-                    view=IncidentApprovalView(incident),
-                )
+                await send_incident_card(channel, incident, "lead")
                 if autonomy_mode in ("read_auto", "full_autonomy"):
                     # READ_AUTO: diagnostics run without asking, announce post-facto.
                     await channel.send(
@@ -556,10 +670,7 @@ def make_bot(
                             severity=severity,
                         )
                     )
-                    await message.channel.send(
-                        embed=alert_embed(incident, console_url(incident, str(message.author.id)), autonomy_mode),
-                        view=IncidentApprovalView(incident),
-                    )
+                    await send_incident_card(message.channel, incident, str(message.author.id))
                     return
                 return  # "other": not our business
 
@@ -575,10 +686,7 @@ def make_bot(
                         severity=IncidentSeverity.P2,
                     )
                 )
-                await message.channel.send(
-                    embed=alert_embed(incident, console_url(incident, str(message.author.id)), autonomy_mode),
-                    view=IncidentApprovalView(incident),
-                )
+                await send_incident_card(message.channel, incident, str(message.author.id))
                 return
 
         await bot.process_commands(message)

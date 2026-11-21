@@ -14,14 +14,18 @@ class IncidentService:
     def _persist(self, incident: Incident) -> None:
         if self._db is None:
             return
-        self._db.upsert_incident(
-            incident.id,
-            incident.service,
-            incident.status.value,
-            incident.severity.value,
-            incident.summary,
-            resolved=incident.status is IncidentStatus.RESOLVED,
-        )
+        try:
+            self._db.upsert_incident(
+                incident.id,
+                incident.service,
+                incident.status.value,
+                incident.severity.value,
+                incident.summary,
+                resolved=incident.status is IncidentStatus.RESOLVED,
+            )
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("Failed to persist incident %s to DB: %s", incident.id, exc)
 
     def create(self, payload: IncidentCreate) -> Incident:
         incident = Incident(**payload.model_dump())

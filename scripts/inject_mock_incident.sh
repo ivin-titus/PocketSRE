@@ -8,10 +8,10 @@
 #   ./scripts/inject_mock_incident.sh --scenario bug --service yuki-core-api
 #   ./scripts/inject_mock_incident.sh --scenario socket-lock --service yuki-core-api
 #
-# Env: POCKETSRE_API_URL (default http://127.0.0.1:8080)
+# Env: POCKETSRE_API_URL (default http://127.0.0.1:8000)
 set -euo pipefail
 
-API_URL="${POCKETSRE_API_URL:-http://127.0.0.1:8080}"
+API_URL="${POCKETSRE_API_URL:-http://127.0.0.1:8000}"
 SCENARIO=""
 SERVICE="yuki-core-api"
 

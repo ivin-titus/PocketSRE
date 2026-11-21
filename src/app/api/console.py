@@ -7,16 +7,19 @@ the magic link is only ever emitted on lead-facing cards.
 
 import asyncio
 import json
+import time
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
+from app.actions.runbooks import is_action_available
 from app.actions.service import ActionService, EscalationRequiredError
-from app.actions.tools import TOOL_REGISTRY
+from app.actions.tools import TOOL_REGISTRY, recommend_action
 from app.api.dependencies import actions, incidents
 from app.api.routes import parse_magic_link
 from app.config import get_settings
+from app.incidents.presence import assess_health
 from app.incidents.service import IncidentService
 from app.shared.budget import BudgetGovernor
 from app.shared.contracts import ActionParams, ActionRequest, RunbookAction
@@ -40,15 +43,45 @@ def console_incident(
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
     results = [r.model_dump(mode="json") for r in action_service.results_for(incident_id)]
-    tools = [
-        {"name": spec.name, "action": spec.action.value, "description": spec.description, "mutating": spec.mutating}
-        for spec in TOOL_REGISTRY.values()
-    ]
+
+    past_actions = [r.get("action", "") for r in results]
+    rec_spec = recommend_action(incident.service, past_actions)
+
+    tools = []
+    for spec in TOOL_REGISTRY.values():
+        available, unavailable_reason = is_action_available(spec.action, incident.service)
+        tools.append(
+            {
+                "name": spec.name,
+                "action": spec.action.value,
+                "label": spec.label,
+                "category": spec.category,
+                "description": spec.description,
+                "mutating": spec.mutating,
+                "requires_approval": spec.requires_approval,
+                "side_effect_warning": spec.side_effect_warning,
+                "available": available,
+                "unavailable_reason": unavailable_reason,
+            }
+        )
+
+    recommended = {
+        "name": rec_spec.name,
+        "action": rec_spec.action.value,
+        "label": rec_spec.label,
+        "category": rec_spec.category,
+        "description": rec_spec.description,
+        "mutating": rec_spec.mutating,
+        "requires_approval": rec_spec.requires_approval,
+        "side_effect_warning": rec_spec.side_effect_warning,
+    }
+
     return {
         "incident": incident.model_dump(mode="json"),
         "actor_id": actor_id,
         "action_results": results,
         "tools": tools,
+        "recommended_action": recommended,
     }
 
 
@@ -71,6 +104,14 @@ def console_action(
     incident = incident_service.get(incident_id)
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
+
+    available, reason = is_action_available(runbook, incident.service)
+    if not available:
+        raise HTTPException(
+            status_code=422,
+            detail=reason or f"Action '{action}' is not valid for target service '{incident.service}'",
+        )
+
     params = ActionParams(tail_lines=tail_lines or 50, grep=grep)
     req = ActionRequest(
         incident_id=incident_id,
@@ -98,23 +139,118 @@ def console_action(
 @router.get("/health")
 def console_health(request: Request, token: str = Query(...)) -> dict:
     claims(token)
-    probe = request.app.state.probe
-    presence_base = get_settings().presence_base_url
-    endpoints = [e.strip() for e in get_settings().presence_endpoints.split(",") if e.strip()]
+    probe = getattr(request.app.state, "probe", None)
+    settings = get_settings()
+    presence_base = settings.presence_base_url
+    endpoints = [e.strip() for e in settings.presence_endpoints.split(",") if e.strip()]
     cards = {}
-    for ep in endpoints:
-        try:
-            payload = probe.payload_for(ep)
-            reasons = probe.health_reasons(ep)
+
+    display_names = {
+        "central": "Yuki Core (Central API)",
+        "discord": "Yuki Discord Bot",
+        "horiz": "Horiz Connector",
+        "telegram": "Yuki Telegram Bot",
+    }
+    checked_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+    healthy_count = 0
+    degraded_count = 0
+    unreachable_count = 0
+    no_coverage_count = 0
+
+    if not presence_base or not probe:
+        for ep in endpoints:
             cards[ep] = {
-                "reachable": payload is not None,
-                "healthy": reasons == [],
-                "reasons": reasons or [],
-                "payload": payload,
+                "display_name": display_names.get(ep, ep),
+                "state": "not_configured",
+                "reachable": False,
+                "healthy": False,
+                "reasons": ["Presence base URL or probe not configured"],
+                "payload": None,
+                "checked_at": checked_at,
             }
-        except Exception as exc:
-            cards[ep] = {"reachable": False, "healthy": False, "reasons": [str(exc)], "payload": None}
-    return {"presence_base": presence_base, "cards": cards}
+    else:
+        for ep in endpoints:
+            try:
+                route, payload = probe.payload_for(ep)
+                if not route:
+                    cards[ep] = {
+                        "display_name": display_names.get(ep, ep),
+                        "state": "no_coverage",
+                        "reachable": False,
+                        "healthy": False,
+                        "reasons": ["No presence coverage for service"],
+                        "payload": None,
+                        "checked_at": checked_at,
+                    }
+                    no_coverage_count += 1
+                elif payload is None:
+                    cards[ep] = {
+                        "display_name": display_names.get(ep, ep),
+                        "state": "unreachable",
+                        "reachable": False,
+                        "healthy": False,
+                        "reasons": ["Presence endpoint unreachable or returned non-200 HTTP response"],
+                        "payload": None,
+                        "checked_at": checked_at,
+                    }
+                    unreachable_count += 1
+                else:
+                    reasons = assess_health(route, payload)
+                    is_healthy = len(reasons) == 0
+                    state = "healthy" if is_healthy else "degraded"
+                    if is_healthy:
+                        healthy_count += 1
+                    else:
+                        degraded_count += 1
+                    cards[ep] = {
+                        "display_name": display_names.get(ep, ep),
+                        "state": state,
+                        "reachable": True,
+                        "healthy": is_healthy,
+                        "reasons": reasons,
+                        "payload": payload,
+                        "checked_at": checked_at,
+                    }
+            except Exception as exc:
+                cards[ep] = {
+                    "display_name": display_names.get(ep, ep),
+                    "state": "unreachable",
+                    "reachable": False,
+                    "healthy": False,
+                    "reasons": [str(exc)],
+                    "payload": None,
+                    "checked_at": checked_at,
+                }
+                unreachable_count += 1
+
+    if degraded_count > 0:
+        overall_state = "degraded"
+    elif unreachable_count > 0:
+        overall_state = "unreachable"
+    elif healthy_count > 0:
+        overall_state = "healthy"
+    else:
+        overall_state = "unknown"
+
+    incident_service: IncidentService | None = getattr(request.app.state, "incidents", None)
+    open_incidents = (
+        len([i for i in incident_service.list_all() if i.status.value in ("open", "triaged")])
+        if incident_service
+        else 0
+    )
+
+    summary = {
+        "overall_state": overall_state,
+        "healthy_count": healthy_count,
+        "degraded_count": degraded_count,
+        "unreachable_count": unreachable_count,
+        "no_coverage_count": no_coverage_count,
+        "open_incidents": open_incidents,
+        "checked_at": checked_at,
+    }
+
+    return {"presence_base": presence_base, "summary": summary, "cards": cards}
 
 
 @router.get("/spend")

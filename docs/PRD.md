@@ -352,7 +352,7 @@ class SafeRunbookAction(str, Enum):
 ### 4.5 The Signed Magic-Link Web Console (Eliminating Discord UI Bugs)
 To prevent the notorious Discord UI component traps (3-second timeouts, zombie views on bot restart, and mobile caching bugs), PocketSRE provides a **Signed Magic-Link Pattern**:
 * **Mechanism:** Alongside the alert embed, Discord delivers a single URL link button: `[🚨 Open Incident Console]`.
-* **Zero-Timeout Guarantee:** Link buttons (`ButtonStyle.link`) invoke zero Discord API callbacks. They are standard URLs that **cannot timeout, cannot expire in memory, and never throw `"Interaction failed"`**.
+* **Zero-Timeout Guarantee:** Link buttons (`ButtonStyle.link`) invoke zero Discord API callbacks. They are standard URLs that **cannot timeout, cannot expire in memory, and never throw `"Interaction failed"`**. Callback action cards acknowledge immediately, display an in-progress state while the runbook runs, and disable with a Console/`/approve` fallback when their 10-minute Discord view lifetime ends.
 * **Cryptographic JWT Authentication:**
   ```python
   def generate_magic_link(user_id: str, role: str, incident_id: str) -> str:
@@ -670,8 +670,21 @@ To guarantee rock-solid stability and save 3+ hours of repetitive scaffolding du
 ### 5.2 Spoken Passphrase / Voice PIN with Side-Effect Warning
 * Requires spoken passphrase authorization (*"Authorize Alpha-Seven-Niner"*) for high-blast-radius actions, explicitly stating side effects beforehand.
 
-### 5.3 Live Single-Page Mission Control Dashboard (Vite + SSE)
-* Single-page web console displaying live system health, budget thermometer, and streaming audit events via Server-Sent Events (`/stream`).
+### 5.3 Live Single-Page Mission Control Dashboard & Calm Incident Console
+* **Calm Mobile-First Incident Console (`/console/`):** Designed for high-stress on-call triage:
+  * Incident header with severity, status, service, summary, and copyable incident ID
+  * Prominent "What should I do next?" section surfacing a single primary recommended action (never defaulting to destructive commands)
+  * Grouped action taxonomy: Recommended, Safe diagnostics, Recovery actions, and Advanced/Host actions behind progressive disclosure
+  * Pre-flight availability filters disabling invalid actions with explanatory tooltips (e.g., service journal limited to nginx/docker)
+  * Confirmation modal for mutating operations displaying target service, side-effect warning, and explicit Cancel / Confirm buttons
+  * Compact result cards with ANSI stripping (`stripAnsi`), scrollable terminal code blocks, and copy-to-clipboard
+  * Structured API error formatting preventing raw object leakage (`[object Object]`)
+  * Clear empty states for action history and audit events
+* **Operational Mission Control Overview (`/console/mission-control.html`):**
+  * Top operational summary row (overall system state, monitored services status breakdown, open incidents, spend)
+  * Granular presence cards distinguishing Healthy, Degraded, Unreachable, No Coverage, and Not Configured states with collapsible probe payloads
+  * Null-safe budget governor displays replacing nulls with "Not configured" / "—" (never `$null`)
+  * Streaming audit feed via Server-Sent Events (`/stream`) with friendly empty state
 
 ### 5.4 GUI-Based Onboarding & Configuration Wizard (SaaS-Style Setup)
 * **Description:** A visual, web-based onboarding wizard on the Vite dashboard that allows engineering teams to configure PocketSRE like a modern SaaS platform:

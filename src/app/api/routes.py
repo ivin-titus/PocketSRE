@@ -28,8 +28,15 @@ def list_incidents(service: IncidentService = Depends(incidents)) -> list[Incide
 
 
 @router.post("/api/incidents", response_model=Incident, status_code=status.HTTP_201_CREATED)
-def create_incident(payload: IncidentCreate, service: IncidentService = Depends(incidents)) -> Incident:
-    return service.create(payload)
+def create_incident(
+    request: Request,
+    payload: IncidentCreate,
+    service: IncidentService = Depends(incidents),
+) -> Incident:
+    incident = service.create(payload)
+    if hasattr(request.app.state, "alerts") and request.app.state.alerts is not None:
+        request.app.state.alerts.emit("opened", incident)
+    return incident
 
 
 @router.get("/api/incidents/{incident_id}", response_model=Incident)

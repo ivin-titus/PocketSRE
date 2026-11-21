@@ -1,6 +1,8 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -8,6 +10,16 @@ class Settings(BaseSettings):
     """Runtime configuration. Secrets remain environment-only."""
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="POCKETSRE_", extra="ignore")
+
+    @model_validator(mode="before")
+    @classmethod
+    def empty_strings_to_none(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            return {
+                k: (None if isinstance(v, str) and not v.strip() and k not in ("gemini_api_keys", "openai_api_key", "openai_base_url") else v)
+                for k, v in data.items()
+            }
+        return data
 
     environment: str = "development"
     magic_link_secret: str = "development-only-change-me"
@@ -20,7 +32,7 @@ class Settings(BaseSettings):
     ssh_command_timeout_seconds: float = 30.0
     autonomy_mode: str = "strict_confirmation"
     role_permissions: str = "SRE-Lead:lead,DevOps:responder,Junior-Dev:viewer"
-    public_base_url: str = "http://localhost:8080"
+    public_base_url: str = "http://localhost:8000"
     web_dist_path: Path = Path("src/web/dist")
     gemini_api_keys: str = ""
     gemini_model: str = "gemini-2.0-flash-lite"

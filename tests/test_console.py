@@ -44,6 +44,32 @@ def test_console_incident_returns_detail_and_tools() -> None:
         assert any(t["mutating"] for t in body["tools"])
         assert any(t["name"] == "fetch_service_logs" for t in body["tools"])
 
+        # Tool enrichment & categories
+        tools_by_name = {t["name"]: t for t in body["tools"]}
+        assert "label" in tools_by_name["fetch_service_logs"]
+        assert tools_by_name["fetch_service_logs"]["category"] == "diagnostic"
+        assert tools_by_name["fetch_service_logs"]["available"] is True
+
+        # Availability filter for service_journal on yuki-core-api
+        assert tools_by_name["service_journal"]["available"] is False
+        assert "Journal is only supported" in tools_by_name["service_journal"]["unavailable_reason"]
+
+        # Recommended action is present and safe
+        assert "recommended_action" in body
+        rec = body["recommended_action"]
+        assert rec["mutating"] is False
+        assert rec["action"] in ("fetch_service_logs", "inspect_service")
+
+
+def test_console_action_rejects_unavailable_action() -> None:
+    with TestClient(app) as client:
+        inc_id = _create_incident(client)
+        token = _token_for(inc_id)
+        # service_journal is invalid for yuki-core-api
+        res = client.post(f"/api/console/action?token={token}&action=service_journal")
+        assert res.status_code == 422
+        assert "Journal is only supported" in res.json()["detail"]
+
 
 def test_console_action_rejects_unknown_tool() -> None:
     with TestClient(app) as client:
@@ -72,7 +98,17 @@ def test_console_spend_and_health() -> None:
         assert spend.json()["budgets"]["per_incident_usd"] == 5.0
         health = client.get(f"/api/console/health?token={token}")
         assert health.status_code == 200
-        assert "cards" in health.json()
+        body = health.json()
+        assert "cards" in body
+        assert "summary" in body
+        assert "overall_state" in body["summary"]
+        assert "healthy_count" in body["summary"]
+        assert "open_incidents" in body["summary"]
+        for card in body["cards"].values():
+            assert "state" in card
+            assert "display_name" in card
+            assert "reachable" in card
+            assert "healthy" in card
 
 
 def test_console_static_pages_served() -> None:

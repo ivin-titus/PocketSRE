@@ -28,8 +28,8 @@ def fetch_url(url: str, timeout: float) -> tuple[int, str]:
     except HTTPError as exc:
         body = exc.read().decode("utf-8") if exc.fp else ""
         return exc.code, body
-    except URLError as exc:
-        raise ConnectionError(f"Failed to connect to {url}: {exc.reason}") from exc
+    except Exception as exc:
+        raise ConnectionError(f"Failed to connect to {url}: {exc}") from exc
 
 
 def assess_health(route: str, data: dict[str, Any]) -> list[str]:
@@ -73,13 +73,18 @@ class PresenceProbe:
 
     def payload_for(self, service: str) -> tuple[str, dict[str, Any] | None]:
         """Fetch the presence payload for a service's route; (route, None) when unreachable."""
-        try:
-            container = resolve_container_name(service)
-        except ValueError:
+        if not self.base_url:
             return "", None
-        route = CONTAINER_TO_ROUTE.get(container)
-        if not route:
-            return "", None  # e.g. yuki-redis has no presence endpoint
+        if service in ROUTE_CONTAINER_DEFAULTS:
+            route = service
+        else:
+            try:
+                container = resolve_container_name(service)
+            except ValueError:
+                return "", None
+            route = CONTAINER_TO_ROUTE.get(container)
+            if not route:
+                return "", None  # e.g. yuki-redis has no presence endpoint
         try:
             status_code, body = fetch_url(f"{self.base_url}/{route}", self.timeout_seconds)
         except ConnectionError:
@@ -93,6 +98,8 @@ class PresenceProbe:
 
     def health_reasons(self, service: str) -> list[str] | None:
         """Failure reasons for a service; None when the service has no presence coverage."""
+        if not self.base_url:
+            return None
         route, data = self.payload_for(service)
         if not route:
             return None

@@ -88,7 +88,10 @@ class ActionService:
         if self.presence is None:
             return "executed_unverified"
         time.sleep(3)
-        reasons = self.presence.health_reasons(service)
+        try:
+            reasons = self.presence.health_reasons(service)
+        except Exception as exc:
+            return f"executed_unverified (probe check pending: {exc})"
         if reasons is None:
             return "executed_unverified"  # no presence coverage (e.g. redis)
         if reasons:
