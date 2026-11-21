@@ -14,14 +14,37 @@ from app.incidents.presence import PresenceProbe
 from app.incidents.service import IncidentService
 from app.shared.audit import AuditLog
 from app.shared.rbac import parse_role_permissions
+from app.storage.db import Database
 from app.bot.discord_runtime import run_discord_bot, stop_task
+
+
+async def db_keepalive(db: Database) -> None:
+    """Neon suspends idle computes; ping periodically to keep it warm."""
+    while True:
+        await asyncio.sleep(240)
+        try:
+            await asyncio.to_thread(db.keepalive)
+        except Exception:
+            pass
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.audit_log = AuditLog()
-    app.state.incidents = IncidentService()
     settings = get_settings()
+    db: Database | None = None
+    if settings.neon_database_url:
+        try:
+            db = await asyncio.to_thread(Database, settings.neon_database_url)
+        except Exception:
+            db = None  # DB optional: in-memory fallback keeps the app alive
+    app.state.db = db
+    app.state.audit_log = AuditLog(db=db)
+    app.state.incidents = IncidentService(db=db)
+    app.state.keepalive_task = (
+        asyncio.create_task(db_keepalive(db), name="pocketsre-db-keepalive")
+        if db is not None
+        else None
+    )
     try:
         executor = SshExecutor.from_settings(settings)
     except SshNotConfiguredError:
@@ -69,6 +92,7 @@ async def lifespan(app: FastAPI):
             app.state.poller.stop()
         await stop_task(app.state.poller_task)
         await stop_task(app.state.discord_task)
+        await stop_task(app.state.keepalive_task)
 
 
 

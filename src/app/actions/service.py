@@ -39,6 +39,7 @@ class ActionService:
             AuditEntry(
                 incident_id=request.incident_id,
                 actor_id=request.actor_id,
+                actor_role=request.actor_role,
                 action=request.action,
                 outcome=result.status,
             )
@@ -94,6 +95,7 @@ class ActionService:
             AuditEntry(
                 incident_id=request.incident_id,
                 actor_id=request.actor_id,
+                actor_role=request.actor_role,
                 action=request.action,
                 outcome=result.status,
             )

@@ -81,6 +81,7 @@ class AuditEntry(BaseModel):
     occurred_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     incident_id: UUID
     actor_id: str
+    actor_role: ActorRole = ActorRole.VIEWER
     action: RunbookAction
     outcome: str
 

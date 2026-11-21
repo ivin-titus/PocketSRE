@@ -27,7 +27,7 @@
 | **Discord RBAC + DM guards** | ✅ Done | `ROLE_PERMISSIONS` config (`SRE-Lead`→lead, `DevOps`→responder, `Junior-Dev`→viewer), `guild_only` on all commands, DM early-return, highest-rank wins |
 | **Approval surfaces** (buttons, `/approve`, magic-link) | ⚠️ Partial | Buttons + `/approve` slash + `@PocketSRE approve` text path done; console-side approve pending |
 | **Devin dispatch** (code-regression path) | ⚠️ Partial | `swe/dispatch.py` posts to `/v1/sessions` with stub fallback; button on cards (lead-gated); Linear/GitHub linking pending |
-| **NeonDB persistence** | ❌ Pending | `storage/` empty; no driver in deps |
+| **NeonDB persistence** | ⚠️ Partial | `storage/db.py` — psycopg write-through for `incidents`/`audit_logs`/`budget_ledger` (PRD DDL), `SELECT 1` keepalive, JSONL audit mirror; graceful in-memory fallback when `NEON_DATABASE_URL` unset |
 | **Budget governor** ($5 cap, per-provider ledger) | ❌ Pending | Nothing |
 | **Loop guard / escalation dossier** | ❌ Pending | Nothing |
 | **Web console UI** (incident page, action pills, logs) | ❌ Pending | 8-line stub |
@@ -117,9 +117,9 @@ detect → investigate → run fixing runbook (e.g. restart) → transparent rep
 - **B7. ✅ Line-1 deferral** — `defer()` first in every handler (FAIL-1.1).
 
 ### Track C — Persistence (NeonDB)
-- **C1. `storage/db.py`** — asyncpg (or psycopg) pool, `SELECT 1` keepalive every 4 min.
-- **C2. DDL migration** — `incidents`, `audit_logs`, `budget_ledger`, `learned_playbooks`, `infra_knowledge_docs` per PRD §9.2.
-- **C3. Swap in-memory stores** — `IncidentService`, `AuditLog`, budget ledger backed by DB; local `audit_log.jsonl` append-only fallback when DB unreachable.
+- **C1. ✅ `storage/db.py`** — psycopg sync driver, `SELECT 1` keepalive every 4 min.
+- **C2. ✅ DDL migration** — `incidents`, `audit_logs`, `budget_ledger` per PRD §9.2 (`learned_playbooks`/`infra_knowledge_docs` deferred to Phase 2).
+- **C3. ✅ Swap in-memory stores** — `IncidentService`/`AuditLog` write-through to DB; `audit_log.jsonl` mirror supported; in-memory fallback when `NEON_DATABASE_URL` unset.
 
 ### Track D — Budget governor
 - **D1. `ai/budget.py`** — thread-safe `SpendTracker`; `record(provider, usd)`; `check(incident_id)` → locked/unlocked; per-provider + per-incident caps; manual override flag.
