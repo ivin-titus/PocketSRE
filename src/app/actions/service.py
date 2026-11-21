@@ -1,3 +1,5 @@
+import time
+
 from app.incidents.presence import PresenceProbe
 from app.shared.audit import AuditLog
 from app.shared.contracts import ActionRequest, ActionResult, ActorRole, AuditEntry
@@ -55,6 +57,18 @@ class ActionService:
                 f"{service} is flagged maintenance_mode — mutating actions are blocked."
             )
 
+    def _post_verify(self, service: str) -> str:
+        """Re-check presence after a mutation; containers need a moment to come up."""
+        if self.presence is None:
+            return "executed_unverified"
+        time.sleep(3)
+        reasons = self.presence.health_reasons(service)
+        if reasons is None:
+            return "executed_unverified"  # no presence coverage (e.g. redis)
+        if reasons:
+            return f"executed_unverified ({'; '.join(reasons)})"
+        return "verified"
+
     def execute(self, request: ActionRequest) -> ActionResult:
         """Validate, then actually run the whitelisted command on the target VM."""
         command = self.validate(request)
@@ -66,11 +80,14 @@ class ActionService:
         output = outcome.stdout
         if outcome.stderr.strip():
             output += ("\n--- stderr ---\n" + outcome.stderr) if output else outcome.stderr
+        status_text = "succeeded" if outcome.exit_code == 0 else f"failed (exit {outcome.exit_code})"
+        if is_mutating(request.action) and outcome.exit_code == 0:
+            status_text = self._post_verify(request.service)
         result = ActionResult(
             incident_id=request.incident_id,
             action=request.action,
             service=request.service,
-            status="succeeded" if outcome.exit_code == 0 else f"failed (exit {outcome.exit_code})",
+            status=status_text,
             output=output[-20_000:],
         )
         self.audit_log.append(

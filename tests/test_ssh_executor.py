@@ -98,13 +98,24 @@ def test_preflight_blocks_mutation_during_maintenance_mode() -> None:
 
 def test_preflight_allows_mutation_when_healthy() -> None:
     executor = FakeExecutor(CommandOutcome(command="cmd", exit_code=0, stdout="restarted", stderr=""))
-    probe = FakeProbe(["restart_recommended flag is true"])
+    probe = FakeProbe([])
     service = ActionService(AuditLog(), executor, probe)  # type: ignore[arg-type]
 
     result = service.execute(_request(RunbookAction.RESTART_SERVICE, ActorRole.LEAD, approved=True))
 
     assert executor.ran == ["sudo /usr/bin/docker restart yuki-telegram-bot"]
-    assert result.status == "succeeded"
+    assert result.status == "verified"
+
+
+def test_post_verify_flags_service_still_unhealthy() -> None:
+    executor = FakeExecutor(CommandOutcome(command="cmd", exit_code=0, stdout="restarted", stderr=""))
+    probe = FakeProbe(["status is 'down' (expected 'online')"])
+    service = ActionService(AuditLog(), executor, probe)  # type: ignore[arg-type]
+
+    result = service.execute(_request(RunbookAction.RESTART_SERVICE, ActorRole.LEAD, approved=True))
+
+    assert result.status.startswith("executed_unverified")
+    assert "status is 'down'" in result.status
 
 
 def test_execute_requires_configured_executor() -> None:
