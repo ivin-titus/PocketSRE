@@ -19,6 +19,16 @@ class FakeExecutor:
         return self.outcome
 
 
+class FakeProbe:
+    """Stands in for PresenceProbe; returns canned health reasons."""
+
+    def __init__(self, reasons: list[str] | None) -> None:
+        self.reasons = reasons
+
+    def health_reasons(self, service: str) -> list[str] | None:
+        return self.reasons
+
+
 def _request(action: RunbookAction, role: ActorRole, approved: bool) -> ActionRequest:
     return ActionRequest(
         incident_id=uuid4(),
@@ -69,6 +79,32 @@ def test_execute_still_enforces_lead_approval_for_mutations() -> None:
         raise AssertionError("restart without lead role must be denied")
 
     assert executor.ran == []
+
+
+def test_preflight_blocks_mutation_during_maintenance_mode() -> None:
+    executor = FakeExecutor(CommandOutcome(command="cmd", exit_code=0, stdout="", stderr=""))
+    probe = FakeProbe(["maintenance_mode flag is true"])
+    service = ActionService(AuditLog(), executor, probe)  # type: ignore[arg-type]
+
+    try:
+        service.execute(_request(RunbookAction.RESTART_SERVICE, ActorRole.LEAD, approved=True))
+    except PermissionError:
+        pass
+    else:
+        raise AssertionError("mutation during maintenance_mode must be denied")
+
+    assert executor.ran == []
+
+
+def test_preflight_allows_mutation_when_healthy() -> None:
+    executor = FakeExecutor(CommandOutcome(command="cmd", exit_code=0, stdout="restarted", stderr=""))
+    probe = FakeProbe(["restart_recommended flag is true"])
+    service = ActionService(AuditLog(), executor, probe)  # type: ignore[arg-type]
+
+    result = service.execute(_request(RunbookAction.RESTART_SERVICE, ActorRole.LEAD, approved=True))
+
+    assert executor.ran == ["sudo /usr/bin/docker restart yuki-telegram-bot"]
+    assert result.status == "succeeded"
 
 
 def test_execute_requires_configured_executor() -> None:

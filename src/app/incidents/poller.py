@@ -2,36 +2,13 @@ import asyncio
 import json
 import logging
 from typing import Any
-import urllib.request
-from urllib.error import HTTPError, URLError
 
 from app.actions.runbooks import resolve_container_name
+from app.incidents.presence import ROUTE_CONTAINER_DEFAULTS, assess_health, fetch_url
 from app.incidents.service import IncidentService
 from app.shared.contracts import IncidentCreate, IncidentSeverity
 
 logger = logging.getLogger(__name__)
-
-ROUTE_CONTAINER_DEFAULTS: dict[str, str] = {
-    "central": "yuki-core-api",
-    "discord": "yuki-discord-bot",
-    "horiz": "yuki-horiz-client",
-    "telegram": "yuki-telegram-bot",
-}
-
-
-def _fetch_url_sync(url: str, timeout: float) -> tuple[int, str]:
-    req = urllib.request.Request(
-        url,
-        headers={"User-Agent": "PocketSRE-PresencePoller/1.0", "Accept": "application/json"},
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as response:
-            return response.status, response.read().decode("utf-8")
-    except HTTPError as exc:
-        body = exc.read().decode("utf-8") if exc.fp else ""
-        return exc.code, body
-    except URLError as exc:
-        raise ConnectionError(f"Failed to connect to {url}: {exc.reason}") from exc
 
 
 class PresencePoller:
@@ -58,7 +35,7 @@ class PresencePoller:
         container = default_container
 
         try:
-            status_code, body = await asyncio.to_thread(_fetch_url_sync, url, self.timeout_seconds)
+            status_code, body = await asyncio.to_thread(fetch_url, url, self.timeout_seconds)
         except Exception as exc:
             logger.warning("Presence poller connection error on %s: %s", url, exc)
             self._handle_failure(
@@ -97,34 +74,7 @@ class PresencePoller:
         except ValueError:
             container = default_container
 
-        # Validate semantic health indicators
-        failure_reasons = []
-
-        if data.get("status") != "online":
-            failure_reasons.append(f"status is '{data.get('status')}' (expected 'online')")
-
-        if route == "central":
-            if data.get("gate_mode") != "ACCEPTING":
-                failure_reasons.append(f"gate_mode is '{data.get('gate_mode')}'")
-            if data.get("db_status") != "ok":
-                failure_reasons.append(f"db_status is '{data.get('db_status')}'")
-            if data.get("redis_status") != "ok":
-                failure_reasons.append(f"redis_status is '{data.get('redis_status')}'")
-
-        flags = data.get("flags") or {}
-        if flags.get("restart_recommended") is True:
-            failure_reasons.append("restart_recommended flag is true")
-        if flags.get("maintenance_mode") is True:
-            failure_reasons.append("maintenance_mode flag is true")
-
-        degraded = data.get("degraded_subsystems") or []
-        if degraded:
-            failure_reasons.append(f"degraded subsystems: {degraded}")
-
-        platform_state = data.get("platform_connection_state")
-        if platform_state and platform_state != "connected":
-            failure_reasons.append(f"platform_connection_state is '{platform_state}'")
-
+        failure_reasons = assess_health(route, data)
         if failure_reasons:
             severity = IncidentSeverity.P1 if (route == "central" or "db_status" in str(failure_reasons)) else IncidentSeverity.P2
             self._handle_failure(

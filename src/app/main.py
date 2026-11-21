@@ -9,6 +9,7 @@ from app.actions.ssh_executor import SshExecutor, SshNotConfiguredError
 from app.api.routes import router
 from app.config import get_settings
 from app.incidents.poller import PresencePoller
+from app.incidents.presence import PresenceProbe
 from app.incidents.service import IncidentService
 from app.shared.audit import AuditLog
 from app.bot.discord_runtime import run_discord_bot, stop_task
@@ -23,7 +24,11 @@ async def lifespan(app: FastAPI):
         executor = SshExecutor.from_settings(settings)
     except SshNotConfiguredError:
         executor = None
-    app.state.actions = ActionService(app.state.audit_log, executor)
+    app.state.actions = ActionService(
+        app.state.audit_log,
+        executor,
+        PresenceProbe(settings.presence_base_url),
+    )
 
     # Presence Poller for Proactive Target Health
     endpoints = [ep.strip() for ep in settings.presence_endpoints.split(",") if ep.strip()]

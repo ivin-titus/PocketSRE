@@ -25,7 +25,7 @@ def test_poller_healthy_endpoint_creates_no_incident() -> None:
         "degraded_subsystems": [],
     }
 
-    with patch("app.incidents.poller._fetch_url_sync", return_value=(200, json.dumps(healthy_payload))):
+    with patch("app.incidents.poller.fetch_url", return_value=(200, json.dumps(healthy_payload))):
         asyncio.run(poller.poll_endpoint("central"))
 
     assert len(service.list_all()) == 0
@@ -49,7 +49,7 @@ def test_poller_degraded_creates_incident_and_maps_container() -> None:
         "degraded_subsystems": ["database"],
     }
 
-    with patch("app.incidents.poller._fetch_url_sync", return_value=(200, json.dumps(degraded_payload))):
+    with patch("app.incidents.poller.fetch_url", return_value=(200, json.dumps(degraded_payload))):
         asyncio.run(poller.poll_endpoint("central"))
 
     incidents = service.list_all()
@@ -61,7 +61,7 @@ def test_poller_degraded_creates_incident_and_maps_container() -> None:
     assert "db_status" in inc.summary
 
     # Second poll should deduplicate and not create a second incident
-    with patch("app.incidents.poller._fetch_url_sync", return_value=(200, json.dumps(degraded_payload))):
+    with patch("app.incidents.poller.fetch_url", return_value=(200, json.dumps(degraded_payload))):
         asyncio.run(poller.poll_endpoint("central"))
 
     assert len(service.list_all()) == 1
@@ -76,7 +76,7 @@ def test_poller_degraded_creates_incident_and_maps_container() -> None:
         "flags": {"restart_recommended": False},
         "degraded_subsystems": [],
     }
-    with patch("app.incidents.poller._fetch_url_sync", return_value=(200, json.dumps(recovered_payload))):
+    with patch("app.incidents.poller.fetch_url", return_value=(200, json.dumps(recovered_payload))):
         asyncio.run(poller.poll_endpoint("central"))
 
     assert len(service.list_all()) == 1
@@ -99,7 +99,7 @@ def test_poller_edge_client_disconnection() -> None:
         "degraded_subsystems": [],
     }
 
-    with patch("app.incidents.poller._fetch_url_sync", return_value=(200, json.dumps(disconnected_payload))):
+    with patch("app.incidents.poller.fetch_url", return_value=(200, json.dumps(disconnected_payload))):
         asyncio.run(poller.poll_endpoint("discord"))
 
     incidents = service.list_all()
