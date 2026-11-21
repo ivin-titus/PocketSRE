@@ -2,30 +2,30 @@
 
 **Scope:** Make PocketSRE Phase 1 (Mode A: text + magic-link console + SSH runbooks) genuinely functional end-to-end — testable by the operator against the real Yuki VM.
 
-**Current state:** ~25–30% of Phase 1. Detection skeleton exists; execution, persistence, conversation flows, console UI, budget governor, and LLM wiring are absent.
+**Current state:** ~40% of Phase 1. Detection + the execution spine (SSH executor, typed tools, pre-flight, post-verify) and the proactive Discord card→approve→execute→report loop exist; persistence, reactive free-text, console UI, budget governor, and LLM wiring remain absent.
 
 ## 0. Where we are vs what's pending
 
 | Capability | Status | Notes |
 |---|---|---|
 | Presence poller (all deterministic triggers, dedup, auto-resolve) | ✅ Done | `incidents/poller.py`, tested |
-| Discord webhook alert ingestion | ✅ Basic | `on_message` parses alerts, creates incident, replies |
+| Discord webhook alert ingestion | ✅ Done | Parses alerts, creates incident, emits `opened` on the alert bridge |
 | Service→container name resolution | ✅ Done | `actions/runbooks.py` aliases→pinned containers |
-| Typed runbook whitelist (logs/restart/stop/start/inspect) | ✅ Done | Enum-mapped, no shell interpolation |
-| RBAC core gate (LEAD + approval for mutations) | ⚠️ Partial | In `ActionService`; **not** wired to Discord roles/commands |
-| Magic-link token signing (HMAC, 15-min) | ⚠️ Partial | Generate+parse exist; no console, no link button emitted |
+| Typed runbook whitelist (logs/restart/stop/start/inspect) | ✅ Done | Enum-mapped, validated params (`tail_lines` 1–500, safe-charset grep) |
+| RBAC core gate (LEAD + approval for mutations) | ✅ Done | Enforced in `execute()`; Discord roles mapped via `actor_role_for()` |
+| Magic-link token signing (HMAC, 15-min) | ✅ Done | Shared `shared/magic_link.py`; alert cards embed the console link |
 | Yuki key pool + LLM router | ✅ Done | `ai/key_pool.py`, `ai/router.py`, tested |
 | Infra docs local load (`docs/infra`) | ⚠️ Partial | Loads into prompt string; never injected (no LLM call) |
-| FastAPI skeleton + incident CRUD | ✅ Done | `/health`, `/api/incidents`, `/api/actions/plan` |
-| Docker packaging (`pocketsre-core`) | ⚠️ Partial | Compose exists; `python:3.12-slim` vs PRD `3.14-slim`; no SSH/doc mounts |
+| FastAPI skeleton + incident CRUD + execute | ✅ Done | `/health`, `/api/incidents`, `/api/actions/plan`, `/api/actions/execute` |
+| Docker packaging (`pocketsre-core`) | ⚠️ Partial | `python:3.14-slim` now; compose still lacks SSH/doc mounts |
 | Audit log | ⚠️ Partial | In-memory only; no NeonDB/`audit_log.jsonl` |
-| **SSH execution (Paramiko)** | ❌ Pending | Dep declared, zero code; `plan()` returns command string only |
-| **Tool-call registry** | ❌ Pending | Raw command dicts today; needs typed tools (`inspect_docker`, etc.) |
-| **Autonomy mode enforcement** | ❌ Pending | Config field exists, never enforced |
-| **Proactive flow** (alert→propose→approve→execute→report) | ❌ Pending | Detection only; no conversation loop |
+| **SSH execution (Paramiko)** | ✅ Done | `actions/ssh_executor.py` — timeouts, exit-code capture, `POST /api/actions/execute` |
+| **Tool-call registry** | ✅ Done | `actions/tools.py` — name/description/mutating per tool; LLM-ready schemas |
+| **Autonomy mode enforcement** | ⚠️ Partial | `FULL_AUTONOMY` auto-runs + announces; `READ_AUTO` free-run vs `STRICT_CONFIRMATION` ask-gate not yet differentiated |
+| **Proactive flow** | ⚠️ Partial | Card→buttons→execute→report→resolution embeds live (`bot/discord_runtime.py`); Devin dispatch card + `/approve` pending |
 | **Reactive flow** (`/status` live, free-text triage) | ❌ Pending | `/status` is a static string |
-| **Discord RBAC + DM guards** | ❌ Pending | No `guild_only`, no `ROLE_PERMISSIONS`, FAIL-1.2 unmitigated |
-| **Approval surfaces** (buttons, `/approve`, magic-link) | ❌ Pending | None exist |
+| **Discord RBAC + DM guards** | ⚠️ Partial | Role-name→`ActorRole` mapping in buttons; no `guild_only`/`ROLE_PERMISSIONS` config yet |
+| **Approval surfaces** (buttons, `/approve`, magic-link) | ⚠️ Partial | Buttons done; `/approve` + console-side approve pending |
 | **Devin dispatch** (code-regression path) | ❌ Pending | No provider code, stub, or Linear/GitHub linking |
 | **NeonDB persistence** | ❌ Pending | `storage/` empty; no driver in deps |
 | **Budget governor** ($5 cap, per-provider ledger) | ❌ Pending | Nothing |
@@ -36,7 +36,7 @@
 | **GeminiClient wiring** | ❌ Pending | Protocol exists; real client ports from Yuki |
 | `scripts/inject_mock_incident.sh` | ❌ Pending | Referenced in README; doesn't exist |
 
-**Phase readiness:** Phase 1 ≈ 25–30% · Phase 2 (voice notes/code-mixing) = 0% · Phase 3 (live voice) = 0%
+**Phase readiness:** Phase 1 ≈ 40% · Phase 2 (voice notes/code-mixing) = 0% · Phase 3 (live voice) = 0%
 
 **Verified environment facts:**
 - SSH to target VM works: `ssh -i ~/.ssh/pocketsre_bot_ed25519 pocketsre@161.118.252.7 'sudo /usr/bin/docker logs --tail 10 yuki-telegram-bot'`
@@ -100,19 +100,19 @@ detect → investigate → run fixing runbook (e.g. restart) → transparent rep
 ## 3. Implementation steps (ordered critical path)
 
 ### Track A — Execution spine (blocks everything)
-- **A1. `src/app/ssh/executor.py`** — Paramiko SSH client: `AutoAddPolicy`, key from `target_ssh_key_path`, connect timeout 10s, exec timeout 30s, capture exit code/stdout/stderr. Singleton with reconnect-on-drop.
-- **A2. Tool-call registry (`src/app/actions/tools.py`)** — Typed tools replacing raw RUNBOOKS strings: each `{name, description, destructive: bool, command_template, param_schema(Pydantic)}`. `docker logs`, `docker inspect`, `docker stats`, `docker ps`, restart/start/stop, `systemctl restart nginx`, `journalctl -u <svc>`, `docker system prune -f`. Keep `command_for()` whitelist discipline — params only fill validated slots.
-- **A3. `ActionService.execute()`** — actually runs the tool over SSH (today it only returns the command string). Record exit code, output snippet, duration, cost into audit.
-- **A4. Pre-flight integrity check** — before any mutation, re-query `/presence/<route>`: block if `maintenance_mode == true`; require drain/`restart_recommended` alignment per config rules.
+- **A1. ✅ `src/app/actions/ssh_executor.py`** — Paramiko SSH client: `AutoAddPolicy`, key from `target_ssh_key_path`, connect timeout 10s, exec timeout 30s, captures exit code/stdout/stderr. Per-call client (no singleton yet).
+- **A2. ✅ Tool-call registry (`src/app/actions/tools.py`)** — Typed tools `{name, description, mutating}` for logs/inspect/restart/stop/start; LLM-ready `tool_schemas()`. Params validated (`tail_lines`, safe-charset grep → `shlex.quote`). Remaining tools to add: `docker stats`, `docker ps`, `nginx_restart`, `service_journal`, `disk_prune`.
+- **A3. ✅ `ActionService.execute()`** — runs the tool over SSH, records exit code + output into audit (`POST /api/actions/execute`). Duration/cost fields still to add.
+- **A4. ✅ Pre-flight integrity check** — `_preflight()` re-queries `/presence/<route>` via `PresenceProbe`; blocks mutations on `maintenance_mode == true`. Post-run `_post_verify()` marks `verified`/`executed_unverified`.
 - **A5. Autonomy enforcement** — implement `READ_AUTO` / `STRICT_CONFIRMATION` / `FULL_AUTONOMY` gating in `ActionService` keyed off `AUTONOMY_MODE`; destructive flag on each tool drives the ask.
-- **A6. Config deltas** — add `AUTONOMY_MODE`, `EXECUTION_PRIVILEGE_MODE`, `ROLE_PERMISSIONS`, `max_trials_per_incident`, budget vars, `DEVIN_API_KEY`, `NEON_DATABASE_URL`, `LINEAR_API_KEY` to `config.py` + `.env.example`.
+- **A6. ⚠️ Config deltas** — `max_trials_per_incident`, budget vars, `DEVIN_API_KEY`, `NEON_DATABASE_URL`, `LINEAR_API_KEY`, speech keys added. Still missing: `EXECUTION_PRIVILEGE_MODE`, `ROLE_PERMISSIONS`.
 
 ### Track B — Discord conversation flows
 - **B1. RBAC guards** — `@app_commands.guild_only()` on all commands, `getattr(interaction.user, "roles", [])`, `ROLE_PERMISSIONS` mapping (`SRE-Lead` → all, `DevOps` → mutations minus Devin dispatch, `Junior-Dev` → read-only).
-- **B2. Alert card** — rich embed: incident summary, proposed action pills (Discord buttons for approve/deny + `ButtonStyle.link` magic-link), autonomy-mode badge.
-- **B3. Approval handler** — `interaction` button callbacks + `/approve <incident_id>` + `@PocketSRE approve` text path → triggers `ActionService.execute()`.
+- **B2. ⚠️ Alert card** — embed with summary + buttons (Fetch logs / Inspect / Approve & Restart / Deny) + console link. Autonomy-mode badge pending.
+- **B3. ⚠️ Approval handler** — button callbacks → `ActionService.execute()` done; `/approve <incident_id>` + text path pending.
 - **B4. Reactive commands** — `/status` (presence snapshot + spend), `/triage`, free-text mention triage via Gemini (lightweight prompt → classification + suggested tool).
-- **B5. Result report** — post-execution embed: command, exit code, stdout tail, recovery check result, incident resolution summary.
+- **B5. ✅ Result report** — `report_embed` posts status + truncated output; `resolution_embed` posts recovery summary.
 - **B6. Devin dispatch card** — code-regression path: permission card → `POST /v3/sessions` → session URL + eventual PR link posted back. Deterministic stub fallback when `DEVIN_API_KEY` unset.
 - **B7. Line-1 deferral** — `await interaction.response.defer()` first line of every handler (FAIL-1.1).
 
