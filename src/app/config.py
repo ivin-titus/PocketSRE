@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     target_ssh_host: str | None = None
     target_ssh_user: str = "pocketsre"
     target_ssh_key_path: Path = Path("/app/.ssh/pocketsre_bot_ed25519")
+    ssh_connect_timeout_seconds: float = 10.0
+    ssh_command_timeout_seconds: float = 30.0
     autonomy_mode: str = "strict_confirmation"
     web_dist_path: Path = Path("src/web/dist")
     gemini_api_keys: str = ""

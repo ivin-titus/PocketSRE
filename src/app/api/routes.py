@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.actions.service import ActionService
+from app.actions.ssh_executor import SshExecutionError, SshNotConfiguredError
 from app.ai.knowledge import load_infra_context
 from app.api.dependencies import actions, incidents
 from app.config import get_settings
@@ -52,6 +53,21 @@ def plan_action(payload: ActionRequest, service: ActionService = Depends(actions
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     except PermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+
+
+@router.post("/api/actions/execute", response_model=ActionResult)
+def execute_action(payload: ActionRequest, service: ActionService = Depends(actions)) -> ActionResult:
+    """Validate and run a whitelisted runbook on the target VM over SSH."""
+    try:
+        return service.execute(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except SshNotConfiguredError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except SshExecutionError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
 
 def _signature(payload: str) -> str:
