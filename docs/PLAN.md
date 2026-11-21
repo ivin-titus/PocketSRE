@@ -24,7 +24,7 @@
 | **Autonomy mode enforcement** | ⚠️ Partial | `FULL_AUTONOMY` auto-runs + announces; `READ_AUTO` free-run vs `STRICT_CONFIRMATION` ask-gate not yet differentiated |
 | **Proactive flow** | ✅ Done | Card→buttons→execute→report→resolution loop live incl. Devin dispatch button + mode badge |
 | **Reactive flow** (`/status` live, free-text triage) | ⚠️ Partial | `/status` shows live presence per route + open incidents; mention/`pocketsre` messages triage via keyword heuristics (Gemini free-text parsing still pending) |
-| **Discord RBAC + DM guards** | ⚠️ Partial | Role-name→`ActorRole` mapping in buttons; no `guild_only`/`ROLE_PERMISSIONS` config yet |
+| **Discord RBAC + DM guards** | ✅ Done | `ROLE_PERMISSIONS` config (`SRE-Lead`→lead, `DevOps`→responder, `Junior-Dev`→viewer), `guild_only` on all commands, DM early-return, highest-rank wins |
 | **Approval surfaces** (buttons, `/approve`, magic-link) | ⚠️ Partial | Buttons + `/approve` slash + `@PocketSRE approve` text path done; console-side approve pending |
 | **Devin dispatch** (code-regression path) | ⚠️ Partial | `swe/dispatch.py` posts to `/v1/sessions` with stub fallback; button on cards (lead-gated); Linear/GitHub linking pending |
 | **NeonDB persistence** | ❌ Pending | `storage/` empty; no driver in deps |
@@ -105,10 +105,10 @@ detect → investigate → run fixing runbook (e.g. restart) → transparent rep
 - **A3. ✅ `ActionService.execute()`** — runs the tool over SSH, records exit code + output into audit (`POST /api/actions/execute`). Duration/cost fields still to add.
 - **A4. ✅ Pre-flight integrity check** — `_preflight()` re-queries `/presence/<route>` via `PresenceProbe`; blocks mutations on `maintenance_mode == true`. Post-run `_post_verify()` marks `verified`/`executed_unverified`.
 - **A5. Autonomy enforcement** — implement `READ_AUTO` / `STRICT_CONFIRMATION` / `FULL_AUTONOMY` gating in `ActionService` keyed off `AUTONOMY_MODE`; destructive flag on each tool drives the ask.
-- **A6. ⚠️ Config deltas** — `max_trials_per_incident`, budget vars, `DEVIN_API_KEY`, `NEON_DATABASE_URL`, `LINEAR_API_KEY`, speech keys added. Still missing: `EXECUTION_PRIVILEGE_MODE`, `ROLE_PERMISSIONS`.
+- **A6. ✅ Config deltas** — `max_trials_per_incident`, budget vars, `DEVIN_API_KEY`, `NEON_DATABASE_URL`, `LINEAR_API_KEY`, speech keys, `ROLE_PERMISSIONS`, `PUBLIC_BASE_URL` added. Still missing: `EXECUTION_PRIVILEGE_MODE`.
 
 ### Track B — Discord conversation flows
-- **B1. RBAC guards** — `@app_commands.guild_only()` on all commands, `getattr(interaction.user, "roles", [])`, `ROLE_PERMISSIONS` mapping (`SRE-Lead` → all, `DevOps` → mutations minus Devin dispatch, `Junior-Dev` → read-only).
+- **B1. ✅ RBAC guards** — `guild_only()` on all commands, `getattr(interaction.user, "roles", [])`, configurable `ROLE_PERMISSIONS` (`SRE-Lead` → lead/all incl. Devin dispatch, `DevOps` → responder/mutations, `Junior-Dev` → viewer/read-only), DM rejection.
 - **B2. ✅ Alert card** — embed with summary + buttons (Fetch logs / Inspect / Approve & Restart / Dispatch Devin / Deny) + console link + autonomy-mode badge.
 - **B3. ✅ Approval handler** — button callbacks + `/approve <incident_id>` + `@PocketSRE approve` text path → `ActionService.execute()`.
 - **B4. ⚠️ Reactive commands** — `/status` live presence + open incidents (spend gauge pending Track D); `/triage` done; free-text mention triage uses keyword heuristics until GeminiClient lands.

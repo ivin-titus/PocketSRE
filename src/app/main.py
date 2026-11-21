@@ -13,6 +13,7 @@ from app.incidents.poller import PresencePoller
 from app.incidents.presence import PresenceProbe
 from app.incidents.service import IncidentService
 from app.shared.audit import AuditLog
+from app.shared.rbac import parse_role_permissions
 from app.bot.discord_runtime import run_discord_bot, stop_task
 
 
@@ -57,6 +58,7 @@ async def lifespan(app: FastAPI):
                 magic_link_secret=settings.magic_link_secret,
                 autonomy_mode=settings.autonomy_mode,
                 devin_api_key=settings.devin_api_key,
+                role_permissions=parse_role_permissions(settings.role_permissions),
             ),
             name="pocketsre-discord",
         )

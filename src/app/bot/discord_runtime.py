@@ -18,21 +18,9 @@ from app.shared.contracts import (
     RunbookAction,
 )
 from app.shared.magic_link import make_console_link
-
-LEAD_ROLE_NAMES = {"sre-lead", "lead", "oncall-lead"}
-RESPONDER_ROLE_NAMES = {"sre", "devops", "developer", "dev", "responder"}
+from app.shared.rbac import actor_role_for
 
 DISCORD_FIELD_LIMIT = 1000
-
-
-def actor_role_for(role_names: list[str]) -> ActorRole:
-    """Map Discord role names to PocketSRE actor roles."""
-    lowered = {name.lower() for name in role_names}
-    if lowered & LEAD_ROLE_NAMES:
-        return ActorRole.LEAD
-    if lowered & RESPONDER_ROLE_NAMES:
-        return ActorRole.RESPONDER
-    return ActorRole.VIEWER
 
 
 def member_role_names(member: object) -> list[str]:
@@ -103,6 +91,7 @@ def make_bot(
     magic_link_secret: str = "",
     autonomy_mode: str = "strict_confirmation",
     devin_api_key: str | None = None,
+    role_permissions: dict[str, ActorRole] | None = None,
 ):
     """Create the Discord adapter lazily so HTTP-only development needs no bot token."""
     import discord
@@ -187,7 +176,7 @@ def make_bot(
         if incident is None:
             await message.channel.send("No active incident matched — pass an incident id prefix.")
             return
-        role = actor_role_for(member_role_names(message.author))
+        role = actor_role_for(member_role_names(message.author), role_permissions)
         await run_action(
             message.channel,
             incident,
@@ -208,7 +197,7 @@ def make_bot(
             action: RunbookAction,
             approved: bool,
         ) -> None:
-            role = actor_role_for(member_role_names(interaction.user))
+            role = actor_role_for(member_role_names(interaction.user), role_permissions)
             await interaction.response.defer()
             await run_action(
                 interaction.channel, self.incident, action, str(interaction.user.id), role, approved
@@ -228,7 +217,7 @@ def make_bot(
 
         @discord.ui.button(label="Dispatch Devin fix", style=discord.ButtonStyle.primary)
         async def dispatch_devin(self, interaction: discord.Interaction, _button) -> None:
-            role = actor_role_for(member_role_names(interaction.user))
+            role = actor_role_for(member_role_names(interaction.user), role_permissions)
             if role is not ActorRole.LEAD:
                 await interaction.response.send_message(
                     "⛔ Dispatching Devin requires a lead role.", ephemeral=True
@@ -325,7 +314,10 @@ def make_bot(
             await bot.process_commands(message)
             return
 
-        # Reactive path: a human pings the bot or reports an issue in a guild channel.
+        # Reactive path: a human pings the bot or reports an issue. Guilds only —
+        # DMs have no roles, so anything mutating would map to VIEWER anyway.
+        if message.guild is None:
+            return
         if bot.user in message.mentions or "pocketsre" in message.content.lower():
             lowered = message.content.lower()
             if "approve" in lowered:
@@ -352,11 +344,13 @@ def make_bot(
         await bot.process_commands(message)
 
     @bot.tree.command(name="status", description="Show live presence + open incidents")
+    @app_commands.guild_only()
     async def status(interaction: discord.Interaction) -> None:
         await interaction.response.defer()
         await interaction.followup.send(embed=await status_embed())
 
     @bot.tree.command(name="approve", description="Approve and run the restart runbook for an incident")
+    @app_commands.guild_only()
     @app_commands.describe(incident_id="Incident id (or its prefix)")
     async def approve(interaction: discord.Interaction, incident_id: str) -> None:
         incident = next(
@@ -370,7 +364,7 @@ def make_bot(
         if incident is None:
             await interaction.response.send_message("No active incident matched.", ephemeral=True)
             return
-        role = actor_role_for(member_role_names(interaction.user))
+        role = actor_role_for(member_role_names(interaction.user), role_permissions)
         await interaction.response.defer()
         await run_action(
             interaction.channel,
@@ -382,6 +376,7 @@ def make_bot(
         )
 
     @bot.tree.command(name="triage", description="Create an incident for a monitored service")
+    @app_commands.guild_only()
     @app_commands.describe(service="Allowed target service", summary="What is failing")
     async def triage(interaction: discord.Interaction, service: str, summary: str) -> None:
         incident = incidents.create(
@@ -404,6 +399,7 @@ async def run_discord_bot(
     magic_link_secret: str = "",
     autonomy_mode: str = "strict_confirmation",
     devin_api_key: str | None = None,
+    role_permissions: dict[str, ActorRole] | None = None,
 ) -> None:
     bot = make_bot(
         incidents,
@@ -414,6 +410,7 @@ async def run_discord_bot(
         magic_link_secret=magic_link_secret,
         autonomy_mode=autonomy_mode,
         devin_api_key=devin_api_key,
+        role_permissions=role_permissions,
     )
     await bot.start(token)
 
