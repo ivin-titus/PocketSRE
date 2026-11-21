@@ -20,6 +20,7 @@ from app.shared.contracts import (
 )
 from app.ai.router import LLMRouter
 from app.ai.triage import classify_message
+from app.shared.budget import BudgetExhaustedError, BudgetGovernor
 from app.shared.magic_link import make_console_link
 from app.shared.rbac import actor_role_for
 
@@ -131,6 +132,9 @@ def make_bot(
     role_permissions: dict[str, ActorRole] | None = None,
     llm_router: LLMRouter | None = None,
     context_provider: Callable[[], str] | None = None,
+    budget: BudgetGovernor | None = None,
+    devin_session_cost_usd: float = 1.00,
+    llm_call_cost_usd: float = 0.00,
 ):
     """Create the Discord adapter lazily so HTTP-only development needs no bot token."""
     import discord
@@ -266,8 +270,16 @@ def make_bot(
                 )
                 return
             await interaction.response.defer()
+            if budget is not None:
+                try:
+                    budget.check("devin", self.incident.id)
+                except BudgetExhaustedError as exc:
+                    await interaction.channel.send(f"💸 Devin dispatch blocked: {exc}")
+                    return
             note = await asyncio.to_thread(dispatcher.dispatch, self.incident)
             await interaction.channel.send(note)
+            if budget is not None:
+                budget.record("devin", devin_session_cost_usd, self.incident.id)
 
         @discord.ui.button(label="Deny", style=discord.ButtonStyle.secondary)
         async def deny(self, interaction: discord.Interaction, button) -> None:
@@ -382,9 +394,17 @@ def make_bot(
 
             # LLM classification first; keywords are the deterministic fallback.
             infra_ctx = context_provider() if context_provider else ""
+            if budget is not None and llm_router is not None:
+                try:
+                    budget.check("llm")
+                except BudgetExhaustedError as exc:
+                    await message.channel.send(f"💸 LLM budget exhausted: {exc}")
+                    return
             classified = await classify_message(
                 llm_router, message.content, infra_context=infra_ctx
             )
+            if classified is not None and budget is not None and llm_call_cost_usd > 0:
+                budget.record("llm", llm_call_cost_usd)
             if classified is not None:
                 if classified["intent"] == "status":
                     await message.channel.send(embed=await status_embed())
@@ -488,6 +508,9 @@ async def run_discord_bot(
     role_permissions: dict[str, ActorRole] | None = None,
     llm_router: LLMRouter | None = None,
     context_provider: Callable[[], str] | None = None,
+    budget: BudgetGovernor | None = None,
+    devin_session_cost_usd: float = 1.00,
+    llm_call_cost_usd: float = 0.00,
 ) -> None:
     bot = make_bot(
         incidents,
@@ -501,6 +524,9 @@ async def run_discord_bot(
         role_permissions=role_permissions,
         context_provider=context_provider,
         llm_router=llm_router,
+        budget=budget,
+        devin_session_cost_usd=devin_session_cost_usd,
+        llm_call_cost_usd=llm_call_cost_usd,
     )
     await bot.start(token)
 

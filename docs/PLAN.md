@@ -28,7 +28,7 @@
 | **Approval surfaces** (buttons, `/approve`, magic-link) | ✅ Done | Buttons + `/approve` slash + `@PocketSRE approve` text + console-side approve pills (click = approval, runs as LEAD) |
 | **Devin dispatch** (code-regression path) | ⚠️ Partial | `swe/dispatch.py` posts to `/v1/sessions` with stub fallback; button on cards (lead-gated); Linear/GitHub linking pending |
 | **NeonDB persistence** | ⚠️ Partial | `storage/db.py` — psycopg write-through for `incidents`/`audit_logs`/`budget_ledger` (PRD DDL), `SELECT 1` keepalive, JSONL audit mirror; graceful in-memory fallback when `NEON_DATABASE_URL` unset |
-| **Budget governor** ($5 cap, per-provider ledger) | ❌ Pending | Nothing |
+| **Budget governor** ($5 cap, per-provider ledger) | ✅ Done | `shared/budget.py` — pre-call `check()` enforces provider caps (`BUDGET_DEVIN_USD`/`LLM`/`SARVAM`/`SMALLEST`) + $5/incident cap → `BudgetExhaustedError`; Neon `budget_ledger` write-through with in-memory fallback; Devin dispatch gated + recorded (`DEVIN_SESSION_COST_ESTIMATE_USD`), LLM calls gated (+ `LLM_CALL_COST_ESTIMATE_USD`); `/api/console/spend` returns incident + provider totals vs caps |
 | **Loop guard / escalation dossier** | ✅ Done | `_loop_guard` caps mutating trials (`MAX_TRIALS_PER_INCIDENT`) + blocks repeat mutations → `EscalationRequiredError` with 4-pillar dossier; Discord renders a dossier embed, APIs return 409 + dossier JSON, escalation audited |
 | **Web console UI** (incident page, action pills, logs) | ✅ Done | `/console/` — token-gated incident detail, tool pills w/ confirm-gate on mutations, result/log panes, spend gauge, SSE feed |
 | **Mission-control page** (health cards, spend gauge, SSE) | ✅ Done | `/console/mission-control.html` — live presence cards (15s refresh), spend gauge, SSE audit feed |
@@ -36,7 +36,7 @@
 | **Gemini + OpenAI client wiring** | ✅ Done | `ai/clients/gemini.py` + `ai/clients/openai.py` (Yuki ports adapted to LLMProvider), `ai/factory.py` picks provider via `AI_PROVIDER`; wired into reactive triage |
 | `scripts/inject_mock_incident.sh` | ❌ Pending | Referenced in README; doesn't exist |
 
-**Phase readiness:** Phase 1 ≈ 70% · Phase 2 (voice notes/code-mixing) = 0% · Phase 3 (live voice) = 0%
+**Phase readiness:** Phase 1 ≈ 75% · Phase 2 (voice notes/code-mixing) = 0% · Phase 3 (live voice) = 0%
 
 **Verified environment facts:**
 - SSH to target VM works: `ssh -i ~/.ssh/pocketsre_bot_ed25519 pocketsre@<YUKI_VM_IP> 'sudo /usr/bin/docker logs --tail 10 yuki-telegram-bot'`

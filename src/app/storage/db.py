@@ -138,3 +138,15 @@ class Database:
         with psycopg.connect(self._dsn) as conn, conn.cursor() as cur:
             cur.execute(sql, (str(incident_id),))
             return float(cur.fetchone()[0])
+
+    def provider_spend(self, provider: str) -> float:
+        sql = "SELECT COALESCE(SUM(amount_spent), 0) FROM budget_ledger WHERE provider = %s"
+        with psycopg.connect(self._dsn) as conn, conn.cursor() as cur:
+            cur.execute(sql, (provider,))
+            return float(cur.fetchone()[0])
+
+    def provider_totals(self) -> dict[str, float]:
+        sql = "SELECT provider, SUM(amount_spent) FROM budget_ledger GROUP BY provider"
+        with psycopg.connect(self._dsn) as conn, conn.cursor() as cur:
+            cur.execute(sql)
+            return {r[0]: float(r[1]) for r in cur.fetchall()}

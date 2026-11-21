@@ -53,6 +53,8 @@ class Settings(BaseSettings):
     budget_llm_usd: float | None = None
     budget_sarvam_usd: float | None = None
     budget_smallest_usd: float | None = None
+    devin_session_cost_estimate_usd: float = 1.00
+    llm_call_cost_estimate_usd: float = 0.00  # Gemini free tier; set small for OpenAI
     max_trials_per_incident: int = 3
 
 

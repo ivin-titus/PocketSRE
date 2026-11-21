@@ -18,6 +18,7 @@ from app.api.dependencies import actions, incidents
 from app.api.routes import parse_magic_link
 from app.config import get_settings
 from app.incidents.service import IncidentService
+from app.shared.budget import BudgetGovernor
 from app.shared.contracts import ActionParams, ActionRequest, RunbookAction
 
 router = APIRouter(prefix="/api/console")
@@ -119,18 +120,21 @@ def console_health(request: Request, token: str = Query(...)) -> dict:
 @router.get("/spend")
 def console_spend(request: Request, token: str = Query(...)) -> dict:
     incident_id, _ = claims(token)
-    db = request.app.state.db
-    total = db.incident_spend(incident_id) if db is not None else 0.0
+    governor: BudgetGovernor | None = request.app.state.budget
+    total = governor.incident_spend(incident_id) if governor else 0.0
     settings = get_settings()
     return {
         "incident_id": str(incident_id),
         "spent_usd": total,
+        "provider_totals_usd": governor.provider_totals() if governor else {},
         "budgets": {
             "per_incident_usd": settings.budget_per_incident_usd,
             "devin_usd": settings.budget_devin_usd,
             "llm_usd": settings.budget_llm_usd,
+            "sarvam_usd": settings.budget_sarvam_usd,
+            "smallest_usd": settings.budget_smallest_usd,
         },
-        "db_connected": db is not None,
+        "db_connected": request.app.state.db is not None,
     }
 
 
