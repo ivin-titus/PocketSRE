@@ -51,6 +51,7 @@ def test_poller_degraded_creates_incident_and_maps_container() -> None:
 
     with patch("app.incidents.poller.fetch_url", return_value=(200, json.dumps(degraded_payload))):
         asyncio.run(poller.poll_endpoint("central"))
+        asyncio.run(poller.poll_endpoint("central"))  # threshold=2: second consecutive failure opens it
 
     incidents = service.list_all()
     assert len(incidents) == 1
@@ -101,8 +102,41 @@ def test_poller_edge_client_disconnection() -> None:
 
     with patch("app.incidents.poller.fetch_url", return_value=(200, json.dumps(disconnected_payload))):
         asyncio.run(poller.poll_endpoint("discord"))
+        asyncio.run(poller.poll_endpoint("discord"))
 
     incidents = service.list_all()
     assert len(incidents) == 1
     assert incidents[0].service == "yuki-discord-bot"
     assert "platform_connection_state" in incidents[0].summary
+
+
+def test_poller_flap_threshold() -> None:
+    import asyncio, json
+    from unittest.mock import patch
+    from app.incidents.service import IncidentService
+    from app.shared.contracts import IncidentStatus
+
+    svc = IncidentService()
+    poller = PresencePoller(base_url="http://x", endpoints=["central"], incidents=svc)
+    bad = {"status": "offline"}
+    with patch("app.incidents.poller.fetch_url", return_value=(200, json.dumps(bad))):
+        asyncio.run(poller.poll_endpoint("central"))
+        assert len(svc.list_all()) == 0  # single flap → no incident
+        asyncio.run(poller.poll_endpoint("central"))
+        assert len(svc.list_all()) == 1  # second consecutive → incident
+
+
+def test_poller_does_not_resolve_foreign_incidents() -> None:
+    import asyncio, json
+    from unittest.mock import patch
+    from app.incidents.service import IncidentService
+    from app.shared.contracts import IncidentCreate, IncidentSeverity
+
+    svc = IncidentService()
+    svc.create(IncidentCreate(source="discord_webhook", service="yuki-core-api",
+                            summary="webhook crash", severity=IncidentSeverity.P1))
+    poller = PresencePoller(base_url="http://x", endpoints=["central"], incidents=svc)
+    good = {"status": "online", "gate_mode": "ACCEPTING", "db_status": "ok", "redis_status": "ok"}
+    with patch("app.incidents.poller.fetch_url", return_value=(200, json.dumps(good))):
+        asyncio.run(poller.poll_endpoint("central"))
+    assert svc.list_all()[0].status.value == "open"  # untouched: not opened by this poller

@@ -31,6 +31,8 @@ class PresencePoller:
         self.interval_seconds = interval_seconds
         self.timeout_seconds = timeout_seconds
         self._running = False
+        self._fail_counts: dict[str, int] = {}  # consecutive-failure count per route
+        self.flap_threshold = 2  # transient timeouts never open incidents
 
     async def poll_endpoint(self, route: str) -> None:
         url = f"{self.base_url}/{route}"
@@ -90,6 +92,10 @@ class PresencePoller:
             self._handle_recovery(container=container, route=route)
 
     def _handle_failure(self, container: str, route: str, reason: str, severity: IncidentSeverity) -> None:
+        self._fail_counts[route] = self._fail_counts.get(route, 0) + 1
+        if self._fail_counts[route] < self.flap_threshold:
+            logger.info("Transient failure on %s (%d/%d): %s", route, self._fail_counts[route], self.flap_threshold, reason)
+            return
         active = self.incidents.get_active_for_service(container)
         if not active:
             logger.info("Proactively raising incident for %s (%s): %s", container, route, reason)
@@ -105,9 +111,11 @@ class PresencePoller:
                 self.alerts.emit("opened", incident)
 
     def _handle_recovery(self, container: str, route: str) -> None:
+        self._fail_counts.pop(route, None)
         active = self.incidents.get_active_for_service(container)
-        if active:
-            logger.info("Service %s has recovered on %s. Resolving incident %s", container, route, active.id)
+        # Only resolve incidents this poller opened — a healthy endpoint must never
+        # close a webhook/reactive incident about a different issue on the same service.
+        if active and active.source == f"presence_poller:{route}":
             resolved = self.incidents.resolve(active.id)
             if resolved and self.alerts:
                 self.alerts.emit("resolved", resolved)

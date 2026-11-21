@@ -217,15 +217,19 @@ def make_bot(
     async def _approve_text_path(message: discord.Message) -> None:
         """`@PocketSRE approve <incident-id>` — text approval for the restart runbook."""
         words = message.content.split()
-        incident = next(
-            (
-                i
-                for i in incidents.list_all()
-                if i.status.value in ("open", "triaged")
-                and (len(words) < 3 or str(i.id).startswith(words[-1]))
-            ),
-            None,
-        )
+        candidates = [
+            i
+            for i in incidents.list_all()
+            if i.status.value in ("open", "triaged")
+            and (len(words) < 3 or str(i.id).startswith(words[-1]))
+        ]
+        if len(candidates) > 1:
+            await message.channel.send(
+                f"⚠️ {len(candidates)} active incidents — pass an incident id prefix: "
+                + ", ".join(f"`{str(i.id)[:8]}` ({i.service})" for i in candidates)
+            )
+            return
+        incident = candidates[0] if candidates else None
         if incident is None:
             await message.channel.send("No active incident matched — pass an incident id prefix.")
             return
@@ -277,6 +281,11 @@ def make_bot(
                 )
                 return
             await interaction.response.defer()
+            if any(w["incident"].id == self.incident.id for w in pr_watches):
+                await interaction.channel.send(
+                    f"🤖 Devin already dispatched for `{self.incident.id}` — watching its PR."
+                )
+                return
             if budget is not None:
                 try:
                     budget.check("devin", self.incident.id)
@@ -441,6 +450,9 @@ def make_bot(
         if message.author == bot.user:
             return
 
+        if getattr(message.author, "bot", False):
+            return  # other bots are never humans
+
         is_webhook = message.webhook_id is not None
         if is_webhook:
             content = message.content or ""
@@ -450,17 +462,27 @@ def make_bot(
                 if embed.description:
                     content += f" {embed.description}"
 
-            detected_container = "yuki-core-api"
-            for container in (
-                "yuki-core-api",
-                "yuki-discord-bot",
-                "yuki-telegram-bot",
-                "yuki-horiz-client",
-                "yuki-redis",
-            ):
-                if container in content or container.replace("yuki-", "") in content:
-                    detected_container = container
-                    break
+            lowered_content = content.lower()
+            # Gate ingestion: only real alert payloads (a Yuki container name or
+            # alert keywords + a known service) may open an incident — CI posts,
+            # git webhook noise and arbitrary messages are ignored.
+            named_containers = [
+                c
+                for c in (
+                    "yuki-core-api",
+                    "yuki-discord-bot",
+                    "yuki-telegram-bot",
+                    "yuki-horiz-client",
+                    "yuki-redis",
+                )
+                if c in lowered_content or c.replace("yuki-", "") in lowered_content
+            ]
+            alert_keywords = ("crash", "down", "error", "alert", "incident", "oom", "500", "unhealthy", "restart")
+            if not named_containers or not any(k in lowered_content for k in alert_keywords):
+                await bot.process_commands(message)
+                return
+
+            detected_container = named_containers[0]
 
             active = incidents.get_active_for_service(detected_container)
             if not active:
@@ -489,7 +511,7 @@ def make_bot(
         # DMs have no roles, so anything mutating would map to VIEWER anyway.
         if message.guild is None:
             return
-        if bot.user in message.mentions or "pocketsre" in message.content.lower():
+        if bot.user in message.mentions:
             lowered = message.content.lower()
             if "approve" in lowered:
                 await _approve_text_path(message)

@@ -53,6 +53,7 @@ def test_poller_emits_opened_and_resolved_events() -> None:
             "app.incidents.poller.fetch_url", return_value=(200, json.dumps(degraded_payload))
         ):
             await poller.poll_endpoint("central")
+            await poller.poll_endpoint("central")  # flap threshold: 2 consecutive
         opened = await asyncio.wait_for(bridge.next(), timeout=1)
 
         with patch(
