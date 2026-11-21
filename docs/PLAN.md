@@ -2,7 +2,7 @@
 
 **Scope:** Make PocketSRE Phase 1 (Mode A: text + magic-link console + SSH runbooks) genuinely functional end-to-end — testable by the operator against the real Yuki VM.
 
-**Current state:** ~50% of Phase 1. Detection + execution spine + proactive *and* reactive Discord loops (live `/status`, `/approve`, mention triage, Devin dispatch) exist; persistence, console UI, budget governor, and LLM wiring remain absent.
+**Current state:** ~60% of Phase 1. Detection + execution spine + proactive *and* reactive Discord loops + NeonDB write-through + token-gated console/mission-control pages exist; budget governor, loop guard, and LLM wiring remain absent.
 
 ## 0. Where we are vs what's pending
 
@@ -18,25 +18,25 @@
 | Infra docs local load (`docs/infra`) | ⚠️ Partial | Loads into prompt string; never injected (no LLM call) |
 | FastAPI skeleton + incident CRUD + execute | ✅ Done | `/health`, `/api/incidents`, `/api/actions/plan`, `/api/actions/execute` |
 | Docker packaging (`pocketsre-core`) | ⚠️ Partial | `python:3.14-slim` now; compose still lacks SSH/doc mounts |
-| Audit log | ⚠️ Partial | In-memory only; no NeonDB/`audit_log.jsonl` |
+| Audit log | ✅ Done | `audit_logs` Neon write-through + optional `audit_log.jsonl` mirror |
 | **SSH execution (Paramiko)** | ✅ Done | `actions/ssh_executor.py` — timeouts, exit-code capture, `POST /api/actions/execute` |
 | **Tool-call registry** | ✅ Done | `actions/tools.py` — name/description/mutating per tool; LLM-ready schemas |
 | **Autonomy mode enforcement** | ⚠️ Partial | `FULL_AUTONOMY` auto-runs + announces; `READ_AUTO` free-run vs `STRICT_CONFIRMATION` ask-gate not yet differentiated |
 | **Proactive flow** | ✅ Done | Card→buttons→execute→report→resolution loop live incl. Devin dispatch button + mode badge |
 | **Reactive flow** (`/status` live, free-text triage) | ⚠️ Partial | `/status` shows live presence per route + open incidents; mention/`pocketsre` messages triage via keyword heuristics (Gemini free-text parsing still pending) |
 | **Discord RBAC + DM guards** | ✅ Done | `ROLE_PERMISSIONS` config (`SRE-Lead`→lead, `DevOps`→responder, `Junior-Dev`→viewer), `guild_only` on all commands, DM early-return, highest-rank wins |
-| **Approval surfaces** (buttons, `/approve`, magic-link) | ⚠️ Partial | Buttons + `/approve` slash + `@PocketSRE approve` text path done; console-side approve pending |
+| **Approval surfaces** (buttons, `/approve`, magic-link) | ✅ Done | Buttons + `/approve` slash + `@PocketSRE approve` text + console-side approve pills (click = approval, runs as LEAD) |
 | **Devin dispatch** (code-regression path) | ⚠️ Partial | `swe/dispatch.py` posts to `/v1/sessions` with stub fallback; button on cards (lead-gated); Linear/GitHub linking pending |
 | **NeonDB persistence** | ⚠️ Partial | `storage/db.py` — psycopg write-through for `incidents`/`audit_logs`/`budget_ledger` (PRD DDL), `SELECT 1` keepalive, JSONL audit mirror; graceful in-memory fallback when `NEON_DATABASE_URL` unset |
 | **Budget governor** ($5 cap, per-provider ledger) | ❌ Pending | Nothing |
 | **Loop guard / escalation dossier** | ❌ Pending | Nothing |
-| **Web console UI** (incident page, action pills, logs) | ❌ Pending | 8-line stub |
-| **Mission-control page** (health cards, spend gauge, SSE) | ❌ Pending | Nothing |
+| **Web console UI** (incident page, action pills, logs) | ✅ Done | `/console/` — token-gated incident detail, tool pills w/ confirm-gate on mutations, result/log panes, spend gauge, SSE feed |
+| **Mission-control page** (health cards, spend gauge, SSE) | ✅ Done | `/console/mission-control.html` — live presence cards (15s refresh), spend gauge, SSE audit feed |
 | **Knowledge upload + injection into triage** | ❌ Pending | No `/api/knowledge/upload`, no `/pocketsre learn-infra` |
 | **GeminiClient wiring** | ❌ Pending | Protocol exists; real client ports from Yuki |
 | `scripts/inject_mock_incident.sh` | ❌ Pending | Referenced in README; doesn't exist |
 
-**Phase readiness:** Phase 1 ≈ 50% · Phase 2 (voice notes/code-mixing) = 0% · Phase 3 (live voice) = 0%
+**Phase readiness:** Phase 1 ≈ 60% · Phase 2 (voice notes/code-mixing) = 0% · Phase 3 (live voice) = 0%
 
 **Verified environment facts:**
 - SSH to target VM works: `ssh -i ~/.ssh/pocketsre_bot_ed25519 pocketsre@161.118.252.7 'sudo /usr/bin/docker logs --tail 10 yuki-telegram-bot'`
@@ -124,11 +124,11 @@ detect → investigate → run fixing runbook (e.g. restart) → transparent rep
 ### Track D — Budget governor
 - **D1. `ai/budget.py`** — thread-safe `SpendTracker`; `record(provider, usd)`; `check(incident_id)` → locked/unlocked; per-provider + per-incident caps; manual override flag.
 
-### Track E — Web console (Vite + vanilla CSS, token-gated)
-- **E1. Console API** — token-validated endpoints: `GET /api/console/{incident_id}`, `POST /api/console/{incident_id}/actions/{tool}` (execute), `GET /api/console/{incident_id}/logs`, `POST /api/knowledge/upload`.
-- **E2. Incident console page** — incident detail, allowed action pills, approve/execute buttons, log tail pane, dossier section.
-- **E3. Mission-control page** — live health cards per service, spend gauge, SSE audit feed (`/stream`), incident list. Single-page, mobile-first.
-- **E4. SSE `/stream`** — Server-Sent Events broadcasting audit entries + poller status.
+### Track E — Web console (dependency-free static assets, token-gated; Vite scaffold dropped — no Node on target)
+- **E1. ✅ Console API** — `GET /api/console/incident|health|spend|stream`, `POST /api/console/action` — all HMAC-token-validated (`api/console.py`). `POST /api/knowledge/upload` still pending.
+- **E2. ✅ Incident console page** — incident detail, tool pills (mutating = confirm gate), result/log panes, spend gauge, SSE feed, mission-control link.
+- **E3. ✅ Mission-control page** — live presence cards per endpoint (15s auto-refresh), spend gauge vs per-incident cap, SSE audit feed.
+- **E4. ✅ SSE `/api/console/stream`** — bridges poller `AlertBridge` open/resolved events + heartbeat.
 
 ### Track F — Knowledge & docs
 - **F1. Knowledge injection** — `load_infra_context()` output injected into the triage prompt; top-3 chunk selection stays simple (filename/section match by service name — no vector DB for Phase 1).

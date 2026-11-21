@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.actions.service import ActionService
 from app.actions.ssh_executor import SshExecutor, SshNotConfiguredError
+from app.api.console import router as console_router
 from app.api.routes import router
 from app.config import get_settings
 from app.incidents.alerts import AlertBridge
@@ -49,10 +50,11 @@ async def lifespan(app: FastAPI):
         executor = SshExecutor.from_settings(settings)
     except SshNotConfiguredError:
         executor = None
+    app.state.probe = PresenceProbe(settings.presence_base_url)
     app.state.actions = ActionService(
         app.state.audit_log,
         executor,
-        PresenceProbe(settings.presence_base_url),
+        app.state.probe,
     )
 
     # Presence Poller for Proactive Target Health
@@ -98,6 +100,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="PocketSRE", version="0.1.0", lifespan=lifespan)
 app.include_router(router)
+app.include_router(console_router)
 
 web_dist = get_settings().web_dist_path
 if web_dist.is_dir():

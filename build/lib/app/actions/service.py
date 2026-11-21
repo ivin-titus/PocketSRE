@@ -19,6 +19,10 @@ class ActionService:
         self.audit_log = audit_log
         self.executor = executor
         self.presence = presence
+        self._results: dict = {}
+
+    def results_for(self, incident_id) -> list[ActionResult]:
+        return list(self._results.get(incident_id, []))
 
     def validate(self, request: ActionRequest) -> str:
         if is_mutating(request.action):
@@ -91,6 +95,7 @@ class ActionService:
             status=status_text,
             output=output[-20_000:],
         )
+        self._results.setdefault(request.incident_id, []).append(result)
         self.audit_log.append(
             AuditEntry(
                 incident_id=request.incident_id,

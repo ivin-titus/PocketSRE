@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PocketSRE Mission Control</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main id="app" class="wide">
+      <h1>Mission Control</h1>
+      <p class="muted">Live presence cards · spend gauge · audit feed</p>
+      <section id="health" class="cards"></section>
+      <section id="spend"></section>
+      <section>
+        <h2>Audit feed</h2>
+        <ul id="feed" class="feed"></ul>
+      </section>
+    </main>
+    <script type="module" src="mission-control.js"></script>
+  </body>
+</html>

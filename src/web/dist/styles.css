@@ -1,0 +1,35 @@
+:root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; background: #101317; color: #f3f5f7; }
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; }
+main { width: min(42rem, calc(100% - 2rem)); padding: 2rem; border: 1px solid #2e3742; border-radius: 1rem; background: #181d23; }
+main.wide { width: min(72rem, calc(100% - 2rem)); }
+h1 { margin-top: 0; }
+.muted { color: #8b96a3; }
+.badge { display: inline-block; padding: .15rem .5rem; border-radius: .4rem; font-size: .8rem; font-weight: 600; }
+.badge.open { background: #7f1d1d; color: #fecaca; }
+.badge.triaged { background: #713f12; color: #fde68a; }
+.badge.resolved { background: #14532d; color: #bbf7d0; }
+.badge.p1 { background: #7f1d1d; color: #fecaca; }
+.badge.p2 { background: #713f12; color: #fde68a; }
+.badge.p3 { background: #1e3a5f; color: #bfdbfe; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .75rem; margin: 1rem 0; }
+.card { border: 1px solid #2e3742; border-radius: .75rem; padding: .9rem; background: #1f262e; }
+.card.healthy { border-left: 4px solid #22c55e; }
+.card.unhealthy { border-left: 4px solid #ef4444; }
+.card.unreachable { border-left: 4px solid #a3a3a3; }
+.card h3 { margin: 0 0 .4rem; font-size: .95rem; }
+.card ul { margin: .3rem 0 0; padding-left: 1.1rem; font-size: .8rem; color: #fbbf24; }
+.pills { display: flex; flex-wrap: wrap; gap: .5rem; margin: 1rem 0; }
+.pill { padding: .45rem .9rem; border-radius: 999px; border: 1px solid #3b4754; background: #232c36; color: #e5e9ee; cursor: pointer; font-size: .85rem; }
+.pill:hover { background: #2d3947; }
+.pill.mutating { border-color: #b45309; }
+.pill:disabled { opacity: .45; cursor: default; }
+.gauge { height: .7rem; border-radius: 999px; background: #2e3742; overflow: hidden; margin: .4rem 0; }
+.gauge > div { height: 100%; background: #38bdf8; }
+.gauge > div.hot { background: #ef4444; }
+pre.output { background: #0c1014; border: 1px solid #2e3742; border-radius: .6rem; padding: .8rem; font-size: .78rem; overflow-x: auto; max-height: 24rem; overflow-y: auto; white-space: pre-wrap; }
+.feed { list-style: none; padding: 0; font-size: .85rem; }
+.feed li { padding: .4rem .2rem; border-bottom: 1px solid #232c36; }
+.feed time { color: #8b96a3; margin-right: .6rem; }
+.result { margin: .8rem 0; }
+.result .status { font-weight: 600; }
+a { color: #38bdf8; }

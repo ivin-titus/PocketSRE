@@ -15,6 +15,7 @@ src/app/ai/knowledge.py
 src/app/ai/providers.py
 src/app/ai/router.py
 src/app/api/__init__.py
+src/app/api/console.py
 src/app/api/dependencies.py
 src/app/api/routes.py
 src/app/bot/__init__.py
@@ -40,6 +41,7 @@ src/pocketsre.egg-info/dependency_links.txt
 src/pocketsre.egg-info/requires.txt
 src/pocketsre.egg-info/top_level.txt
 tests/test_api.py
+tests/test_console.py
 tests/test_knowledge.py
 tests/test_poller.py
 tests/test_proactive_flow.py
