@@ -105,7 +105,7 @@ detect → investigate → run fixing runbook (e.g. restart) → transparent rep
 - **A3. ✅ `ActionService.execute()`** — runs the tool over SSH, records exit code + output into audit (`POST /api/actions/execute`). Duration/cost fields still to add.
 - **A4. ✅ Pre-flight integrity check** — `_preflight()` re-queries `/presence/<route>` via `PresenceProbe`; blocks mutations on `maintenance_mode == true`. Post-run `_post_verify()` marks `verified`/`executed_unverified`.
 - **A5. Autonomy enforcement** — implement `READ_AUTO` / `STRICT_CONFIRMATION` / `FULL_AUTONOMY` gating in `ActionService` keyed off `AUTONOMY_MODE`; destructive flag on each tool drives the ask.
-- **A6. ✅ Config deltas** — `max_trials_per_incident`, budget vars, `DEVIN_API_KEY`, `NEON_DATABASE_URL`, `LINEAR_API_KEY`, speech keys, `ROLE_PERMISSIONS`, `PUBLIC_BASE_URL` added. Still missing: `EXECUTION_PRIVILEGE_MODE`.
+- **A6. ✅ Config deltas** — `max_trials_per_incident`, budget vars, `DEVIN_API_KEY`, `NEON_DATABASE_URL`, `LINEAR_API_KEY`, speech keys, `ROLE_PERMISSIONS`, `PUBLIC_BASE_URL` added. `EXECUTION_PRIVILEGE_MODE` also added.
 
 ### Track B — Discord conversation flows
 - **B1. ✅ RBAC guards** — `guild_only()` on all commands, `getattr(interaction.user, "roles", [])`, configurable `ROLE_PERMISSIONS` (`SRE-Lead` → lead/all incl. Devin dispatch, `DevOps` → responder/mutations, `Junior-Dev` → viewer/read-only), DM rejection.

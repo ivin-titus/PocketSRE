@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     devin_session_cost_estimate_usd: float = 1.00
     llm_call_cost_estimate_usd: float = 0.00  # Gemini free tier; set small for OpenAI
     max_trials_per_incident: int = 3
+    execution_privilege_mode: str = "non_root"  # non_root | full_root (PRD §3)
 
 
     @property

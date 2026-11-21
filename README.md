@@ -64,7 +64,7 @@ Toggle personalities instantly via Discord (`/pocketsre avatar kiwi` or `/pocket
 * Unlocks an **Ephemeral Break-Glass Web Console** on the Lead's phone with diagnostic action pills, an interactive ad-hoc bash runner, and live SSE streaming logs.
 
 ### 7. 🤖 Pluggable Autonomous SWE Engine
-* Dispatches code regressions to **Cognition AI Devin** (`POST /v3/sessions`) to clone repos, reproduce tracebacks in cloud sandboxes, synthesize patches, and open GitHub PRs.
+* Dispatches code regressions to **Cognition AI Devin** (`POST /v1/sessions`) to clone repos, reproduce tracebacks in cloud sandboxes, synthesize patches, and open GitHub PRs.
 * Architecturally swappable with local/air-gapped runners (**OpenCode**, **SWE-agent**) via unified `AutonomousSweProvider` contract.
 * Automatically cross-links incidents to **Linear** and **GitHub Issues**.
 
@@ -199,7 +199,7 @@ To guarantee 100% demo resilience during the 12-hour hackathon, PocketSRE follow
 | **Reasoning Engine** | Google Gemini Flash Lite (`google-genai` 3.6+) | Sub-second reflex triage, dual-key rotation on 429 quota exhaustion. |
 | **Sovereign LLM Option**| `openai` Python SDK (vLLM / Ollama) | Enterprise air-gapped inference guarantee (Llama-3-70B, Qwen-2.5-Coder). |
 | **Operator Interface** | Discord API (`discord.py` 2.7+, `discord-ext-voice-receive`) | Ubiquitous mobile presence, native roles/RBAC, and voice gateway support. |
-| **Web Console** | Vite 8.3+, React 19.3+, Vanilla CSS | Ultra-lightweight mobile webview for JWT magic-link execution. |
+| **Web Console** | Vanilla HTML/JS/CSS static assets (`web/dist`, no Node needed) | Ultra-lightweight mobile webview for HMAC magic-link execution; SSE-driven. |
 | **Storage & Memory** | NeonDB (Serverless PostgreSQL) | Serverless relational store with keepalive pings for learned incident playbooks. |
 | **Autonomous SWE** | Cognition AI Devin API + OpenCode | Autonomous repo cloning, bug reproduction, and PR dispatch. |
 | **Cloud Execution** | Paramiko 5.1+ SSH Client | Out-of-band remote SSH execution with non-root sudoers whitelist. |
