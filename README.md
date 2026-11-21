@@ -146,7 +146,6 @@ PocketSRE/
 │   │   ├── incidents/           # Triage, lifecycle, and notifications
 │   │   ├── actions/             # Typed runbooks, policy checks, and direct SSH
 │   │   ├── ai/                  # LLM routing, key rotation, and budget governor
-│   │   ├── integrations/        # Sentry, GitHub, Linear; future Slack/Tailscale/Terraform
 │   │   ├── storage/             # Neon database access and migrations
 │   │   └── shared/              # Contracts, RBAC, audit, and observability helpers
 │   └── web/                     # Vite + vanilla CSS source; FastAPI mounts web/dist
@@ -227,26 +226,28 @@ cd PocketSRE
 cp .env.example .env
 ```
 
-Your `.env` should include:
+Your `.env` should include (see `.env.example` for the full list — all settings use the `POCKETSRE_` prefix):
 ```env
 # Discord
-DISCORD_BOT_TOKEN="your_discord_bot_token"
-DISCORD_GUILD_ID="your_server_id"
+POCKETSRE_DISCORD_TOKEN="your_discord_bot_token"
+POCKETSRE_DISCORD_GUILD_ID="your_server_id"
+POCKETSRE_DISCORD_ALERT_CHANNEL_ID="your_alerts_channel_id"
 
 # AI & Speech
-GEMINI_API_KEY_PRIMARY="your_primary_gemini_key"
-GEMINI_API_KEY_FALLBACK="your_fallback_gemini_key"
-SARVAM_API_KEY="your_sarvam_key"
+POCKETSRE_GEMINI_API_KEYS="primary_key,fallback_key"
+POCKETSRE_GEMINI_MODEL="gemini-2.0-flash-lite"
+# SARVAM_API_KEY — Phase 2 (voice notes)
 
-# Database
-NEON_DATABASE_URL="postgres://user:pass@ep-pooler.region.neon.tech/neondb?sslmode=require"
-
-# Infrastructure & SWE Engine
-OCI_TARGET_HOST="10.0.0.X"
-OCI_SSH_KEY_PATH="/app/.ssh/id_ed25519"
-DEVIN_API_KEY="your_devin_api_key"
-JWT_SECRET="your_cryptographic_jwt_secret"
+# Infrastructure & Console
+POCKETSRE_TARGET_SSH_HOST="161.118.252.7"
+POCKETSRE_TARGET_SSH_USER="pocketsre"
+POCKETSRE_TARGET_SSH_KEY_PATH="/app/.ssh/pocketsre_bot_ed25519"
+POCKETSRE_MAGIC_LINK_SECRET="your_cryptographic_signing_secret"
+POCKETSRE_AUTONOMY_MODE="read_auto"
+# NEON_DATABASE_URL, DEVIN_API_KEY, LINEAR_API_KEY — pending Phase 1 tracks C/B6
 ```
+
+> **Note:** The PRD lists unprefixed env names (`DISCORD_BOT_TOKEN`, `JWT_SECRET`, ...). The implementation standardizes on the `POCKETSRE_` prefix via `pydantic-settings`; the PRD will be aligned when Phase 1 config lands (PLAN.md §A6).
 
 ### 3. Deploy Control-Plane via Docker Compose
 ```bash
@@ -263,7 +264,7 @@ ssh -i ~/.ssh/pocketsre_bot_ed25519 pocketsre@<TARGET_VM_IP> 'sudo /usr/bin/dock
 
 ## 🧪 Incident Simulation & Demo Script
 
-PocketSRE includes an automated mock incident injector to rehearse demo scenarios:
+PocketSRE will include an automated mock incident injector to rehearse demo scenarios (planned — see `docs/PLAN.md` §G1; not yet implemented):
 
 ```bash
 # 1. Trigger container crash (Resource Starvation)

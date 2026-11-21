@@ -2,7 +2,41 @@
 
 **Scope:** Make PocketSRE Phase 1 (Mode A: text + magic-link console + SSH runbooks) genuinely functional end-to-end — testable by the operator against the real Yuki VM.
 
-**Current state:** ~25–30% of Phase 1. Detection skeleton exists (presence poller, Discord webhook ingest, runbook planner, RBAC-lite, magic-link signing, Yuki-derived key pool). Execution, persistence, conversation flows, console UI, budget governor, and LLM wiring are absent.
+**Current state:** ~25–30% of Phase 1. Detection skeleton exists; execution, persistence, conversation flows, console UI, budget governor, and LLM wiring are absent.
+
+## 0. Where we are vs what's pending
+
+| Capability | Status | Notes |
+|---|---|---|
+| Presence poller (all deterministic triggers, dedup, auto-resolve) | ✅ Done | `incidents/poller.py`, tested |
+| Discord webhook alert ingestion | ✅ Basic | `on_message` parses alerts, creates incident, replies |
+| Service→container name resolution | ✅ Done | `actions/runbooks.py` aliases→pinned containers |
+| Typed runbook whitelist (logs/restart/stop/start/inspect) | ✅ Done | Enum-mapped, no shell interpolation |
+| RBAC core gate (LEAD + approval for mutations) | ⚠️ Partial | In `ActionService`; **not** wired to Discord roles/commands |
+| Magic-link token signing (HMAC, 15-min) | ⚠️ Partial | Generate+parse exist; no console, no link button emitted |
+| Yuki key pool + LLM router | ✅ Done | `ai/key_pool.py`, `ai/router.py`, tested |
+| Infra docs local load (`docs/infra`) | ⚠️ Partial | Loads into prompt string; never injected (no LLM call) |
+| FastAPI skeleton + incident CRUD | ✅ Done | `/health`, `/api/incidents`, `/api/actions/plan` |
+| Docker packaging (`pocketsre-core`) | ⚠️ Partial | Compose exists; `python:3.12-slim` vs PRD `3.14-slim`; no SSH/doc mounts |
+| Audit log | ⚠️ Partial | In-memory only; no NeonDB/`audit_log.jsonl` |
+| **SSH execution (Paramiko)** | ❌ Pending | Dep declared, zero code; `plan()` returns command string only |
+| **Tool-call registry** | ❌ Pending | Raw command dicts today; needs typed tools (`inspect_docker`, etc.) |
+| **Autonomy mode enforcement** | ❌ Pending | Config field exists, never enforced |
+| **Proactive flow** (alert→propose→approve→execute→report) | ❌ Pending | Detection only; no conversation loop |
+| **Reactive flow** (`/status` live, free-text triage) | ❌ Pending | `/status` is a static string |
+| **Discord RBAC + DM guards** | ❌ Pending | No `guild_only`, no `ROLE_PERMISSIONS`, FAIL-1.2 unmitigated |
+| **Approval surfaces** (buttons, `/approve`, magic-link) | ❌ Pending | None exist |
+| **Devin dispatch** (code-regression path) | ❌ Pending | No provider code, stub, or Linear/GitHub linking |
+| **NeonDB persistence** | ❌ Pending | `storage/` empty; no driver in deps |
+| **Budget governor** ($5 cap, per-provider ledger) | ❌ Pending | Nothing |
+| **Loop guard / escalation dossier** | ❌ Pending | Nothing |
+| **Web console UI** (incident page, action pills, logs) | ❌ Pending | 8-line stub |
+| **Mission-control page** (health cards, spend gauge, SSE) | ❌ Pending | Nothing |
+| **Knowledge upload + injection into triage** | ❌ Pending | No `/api/knowledge/upload`, no `/pocketsre learn-infra` |
+| **GeminiClient wiring** | ❌ Pending | Protocol exists; real client ports from Yuki |
+| `scripts/inject_mock_incident.sh` | ❌ Pending | Referenced in README; doesn't exist |
+
+**Phase readiness:** Phase 1 ≈ 25–30% · Phase 2 (voice notes/code-mixing) = 0% · Phase 3 (live voice) = 0%
 
 **Verified environment facts:**
 - SSH to target VM works: `ssh -i ~/.ssh/pocketsre_bot_ed25519 pocketsre@161.118.252.7 'sudo /usr/bin/docker logs --tail 10 yuki-telegram-bot'`

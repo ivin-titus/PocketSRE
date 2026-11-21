@@ -1,0 +1,44 @@
+# /etc/sudoers.d/pocketsre — canonical whitelist for PocketSRE remote execution on the Yuki VM.
+# Verified live on 161.118.252.7 (yukihira), sudo 1.9+ compatible: trailing wildcards only,
+# absolute paths, no deprecated directives. Validate after edits: sudo visudo -cf <file>.
+# Keep in sync with the tool registry in src/app/actions/ — see docs/infra/yuki_architecture.md §8.
+
+# --- Container Lifecycle (Strictly Pinned to Yuki Containers) ---
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker restart yuki-discord-bot
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker restart yuki-telegram-bot
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker restart yuki-horiz-client
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker restart yuki-core-api
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker restart yuki-redis
+
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker start yuki-discord-bot
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker start yuki-telegram-bot
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker start yuki-horiz-client
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker start yuki-core-api
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker start yuki-redis
+
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker stop yuki-discord-bot
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker stop yuki-telegram-bot
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker stop yuki-horiz-client
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker stop yuki-core-api
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker stop yuki-redis
+
+# --- Container Read-Only Diagnostics & Logs (Any Options / Tail Counts) ---
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker logs *
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker inspect *
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker top *
+
+# --- Global Docker Telemetry & Pruning ---
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker ps
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker ps -a
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker stats --no-stream
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker system prune -f
+
+# --- Host Ingress & Web Server (NGINX) ---
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart nginx
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/systemctl status nginx
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/nginx -t
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/journalctl -u nginx *
+
+# --- Host Docker Daemon Status ---
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/systemctl status docker
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/journalctl -u docker *

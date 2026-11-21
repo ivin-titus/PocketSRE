@@ -235,3 +235,91 @@ sudo /usr/bin/docker start <container_name>
 * `yuki-discord-bot`
 * `yuki-telegram-bot`
 * `yuki-redis`
+
+---
+
+## 8. PocketSRE SSH Access & Sudoers Whitelist (Verified Ground Truth)
+
+This section is the canonical source of truth for PocketSRE's remote execution surface on the Yuki VM. The runbook/tool registry in `src/app/actions/` MUST stay in sync with the sudoers whitelist below — a tool that maps to a command not listed here will fail at the target host.
+
+### 8.1 Connection Details (Verified Working)
+
+```bash
+# Target host: 161.118.252.7 (yukihira — OCI VM)
+# Auth: Ed25519 key pair, unprivileged user `pocketsre`
+ssh -i ~/.ssh/pocketsre_bot_ed25519 pocketsre@161.118.252.7 'sudo /usr/bin/docker logs --tail 10 yuki-telegram-bot'
+```
+
+* Private key path on PocketSRE VM / in container: `/app/.ssh/pocketsre_bot_ed25519` (chmod 600)
+* `pocketsre` user on Yuki VM: passwordless-login disabled; sudo limited to the whitelist below
+* Shell pipelines work around sudo: `sudo docker logs <c> | grep -i error` — grep runs unprivileged in the remote shell, so log filtering needs no sudoers expansion
+* Paramiko client must set `AutoAddPolicy` for missing host keys (FAIL-3.4)
+
+### 8.2 `/etc/sudoers.d/pocketsre` (Live — `visudo -cf` Verified)
+
+```text
+# --- Container Lifecycle (Strictly Pinned to Yuki Containers) ---
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker restart yuki-discord-bot
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker restart yuki-telegram-bot
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker restart yuki-horiz-client
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker restart yuki-core-api
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker restart yuki-redis
+
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker start yuki-discord-bot
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker start yuki-telegram-bot
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker start yuki-horiz-client
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker start yuki-core-api
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker start yuki-redis
+
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker stop yuki-discord-bot
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker stop yuki-telegram-bot
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker stop yuki-horiz-client
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker stop yuki-core-api
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker stop yuki-redis
+
+# --- Container Read-Only Diagnostics & Logs (Any Options / Tail Counts) ---
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker logs *
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker inspect *
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker top *
+
+# --- Global Docker Telemetry & Pruning ---
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker ps
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker ps -a
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker stats --no-stream
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/docker system prune -f
+
+# --- Host Ingress & Web Server (NGINX) ---
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart nginx
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/systemctl status nginx
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/nginx -t
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/journalctl -u nginx *
+
+# --- Host Docker Daemon Status ---
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/systemctl status docker
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/journalctl -u docker *
+```
+
+### 8.3 Sudo Syntax Rules (Modern Ubuntu / sudo 1.9+)
+
+The Yuki VM runs a recent Ubuntu where sudo rejects legacy constructs. Rules for any whitelist expansion:
+
+* **Trailing wildcards only** — `/usr/bin/docker logs *` is valid; wildcards mid-command (e.g. `docker logs --tail * x`) are rejected.
+* **Absolute paths always** — sudo refuses relative binary paths; pin `/usr/bin/...` exactly.
+* **No deprecated directives** — `requiretty` was removed in sudo 1.9; including it produces invalid-config warnings. Keep the file free of `Defaults` lines unless verified.
+* **Permissions:** file owned root, `chmod 440`.
+* **Always validate after edits:** `sudo visudo -cf /etc/sudoers.d/pocketsre`.
+
+### 8.4 Safe Expansion Candidates
+
+Commands that may be added using the same pattern when PocketSRE needs them (each requires sudoers update + tool-registry update + `visudo -cf`):
+
+```text
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/systemctl status postgresql
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/systemctl status sshd
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/journalctl -u postgresql *
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/df -h
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/free -m
+pocketsre ALL=(ALL) NOPASSWD: /usr/bin/uptime
+```
+
+(Note: `df`, `free`, `uptime` run fine unprivileged — sudo entries only needed if invoked under elevated diagnostic paths.)
