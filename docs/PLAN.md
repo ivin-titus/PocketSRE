@@ -66,7 +66,7 @@
 
 **Loop guard (anti-infinite-loop):** `max_trials_per_incident` (default 3) + "no identical runbook twice on one incident" + `max_incident_age_minutes` cap. When exceeded or remediation is outside the whitelist (e.g. host postgres socket), PocketSRE halts, generates the escalation dossier, and hands off to the lead — never retries.
 
-**Budget governor:** per-provider budgets — `BUDGET_DEVIN_USD` (daily $), `BUDGET_LLM_USD` (Gemini = $0, tracked for completeness), `BUDGET_PER_INCIDENT_USD` ($5 default cap). Lockout at cap until manual override. Ledger persisted to NeonDB `budget_ledger`.
+**Budget governor:** per-provider budgets — `BUDGET_DEVIN_USD` (daily $), `BUDGET_LLM_USD` (Gemini = $0 free tier), `BUDGET_PER_INCIDENT_USD` ($5 default cap), plus `BUDGET_SARVAM_USD` / `BUDGET_SMALLEST_USD` guarding the metered speech credits (Sarvam 500 credits + Smallest.ai $60 provisioned; `POCKETSRE_SARVAM_API_KEY` and `POCKETSRE_SMALLEST_AI_API_KEY` in `.env`). Lockout at cap until manual override. Ledger persisted to NeonDB `budget_ledger`. Credit-burn hygiene: speech keys stay dormant until Phase 2, TTS/STT calls are cached and rate-limited per incident, and a `MOCK_SPEECH=true` test path replays fixtures instead of calling paid APIs.
 
 ---
 

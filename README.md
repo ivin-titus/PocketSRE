@@ -236,7 +236,8 @@ POCKETSRE_DISCORD_ALERT_CHANNEL_ID="your_alerts_channel_id"
 # AI & Speech
 POCKETSRE_GEMINI_API_KEYS="primary_key,fallback_key"
 POCKETSRE_GEMINI_MODEL="gemini-2.0-flash-lite"
-# SARVAM_API_KEY — Phase 2 (voice notes)
+POCKETSRE_SARVAM_API_KEY=""        # Phase 2 — metered credits (500)
+POCKETSRE_SMALLEST_AI_API_KEY=""   # Phase 2 — metered credits ($60)
 
 # Infrastructure & Console
 POCKETSRE_TARGET_SSH_HOST="161.118.252.7"

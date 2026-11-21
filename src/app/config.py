@@ -30,6 +30,23 @@ class Settings(BaseSettings):
     discord_alert_channel_id: int | None = None
     infra_docs_path: Path = Path("docs/infra")
 
+    # Speech providers (Phase 2 — metered credits)
+    sarvam_api_key: str | None = None
+    smallest_ai_api_key: str | None = None
+
+    # Persistence & integrations
+    neon_database_url: str | None = None
+    devin_api_key: str | None = None
+    linear_api_key: str | None = None
+
+    # Budget governor (USD caps; Gemini free tier counts $0)
+    budget_per_incident_usd: float = 5.00
+    budget_devin_usd: float | None = None
+    budget_llm_usd: float | None = None
+    budget_sarvam_usd: float | None = None
+    budget_smallest_usd: float | None = None
+    max_trials_per_incident: int = 3
+
 
     @property
     def gemini_keys(self) -> list[str]:
