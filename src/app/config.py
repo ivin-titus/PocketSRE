@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     ssh_connect_timeout_seconds: float = 10.0
     ssh_command_timeout_seconds: float = 30.0
     autonomy_mode: str = "strict_confirmation"
+    public_base_url: str = "http://localhost:8080"
     web_dist_path: Path = Path("src/web/dist")
     gemini_api_keys: str = ""
     gemini_model: str = "gemini-2.0-flash-lite"

@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from app.actions.runbooks import resolve_container_name
+from app.incidents.alerts import AlertBridge
 from app.incidents.presence import ROUTE_CONTAINER_DEFAULTS, assess_health, fetch_url
 from app.incidents.service import IncidentService
 from app.shared.contracts import IncidentCreate, IncidentSeverity
@@ -21,7 +22,9 @@ class PresencePoller:
         incidents: IncidentService,
         interval_seconds: float = 15.0,
         timeout_seconds: float = 5.0,
+        alerts: AlertBridge | None = None,
     ) -> None:
+        self.alerts = alerts
         self.base_url = base_url.rstrip("/")
         self.endpoints = endpoints
         self.incidents = incidents
@@ -90,7 +93,7 @@ class PresencePoller:
         active = self.incidents.get_active_for_service(container)
         if not active:
             logger.info("Proactively raising incident for %s (%s): %s", container, route, reason)
-            self.incidents.create(
+            incident = self.incidents.create(
                 IncidentCreate(
                     source=f"presence_poller:{route}",
                     service=container,
@@ -98,12 +101,16 @@ class PresencePoller:
                     severity=severity,
                 )
             )
+            if self.alerts:
+                self.alerts.emit("opened", incident)
 
     def _handle_recovery(self, container: str, route: str) -> None:
         active = self.incidents.get_active_for_service(container)
         if active:
             logger.info("Service %s has recovered on %s. Resolving incident %s", container, route, active.id)
-            self.incidents.resolve(active.id)
+            resolved = self.incidents.resolve(active.id)
+            if resolved and self.alerts:
+                self.alerts.emit("resolved", resolved)
 
     async def poll_once(self) -> None:
         await asyncio.gather(*(self.poll_endpoint(route) for route in self.endpoints))

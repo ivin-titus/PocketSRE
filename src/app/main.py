@@ -8,6 +8,7 @@ from app.actions.service import ActionService
 from app.actions.ssh_executor import SshExecutor, SshNotConfiguredError
 from app.api.routes import router
 from app.config import get_settings
+from app.incidents.alerts import AlertBridge
 from app.incidents.poller import PresencePoller
 from app.incidents.presence import PresenceProbe
 from app.incidents.service import IncidentService
@@ -32,11 +33,13 @@ async def lifespan(app: FastAPI):
 
     # Presence Poller for Proactive Target Health
     endpoints = [ep.strip() for ep in settings.presence_endpoints.split(",") if ep.strip()]
+    app.state.alerts = AlertBridge()
     app.state.poller = PresencePoller(
         base_url=settings.presence_base_url,
         endpoints=endpoints,
         incidents=app.state.incidents,
         interval_seconds=15.0,
+        alerts=app.state.alerts,
     )
     app.state.poller_task = asyncio.create_task(app.state.poller.run(), name="pocketsre-presence-poller")
 
@@ -49,6 +52,10 @@ async def lifespan(app: FastAPI):
                 app.state.incidents,
                 app.state.actions,
                 alert_channel_id=settings.discord_alert_channel_id,
+                alerts=app.state.alerts,
+                public_base_url=settings.public_base_url,
+                magic_link_secret=settings.magic_link_secret,
+                autonomy_mode=settings.autonomy_mode,
             ),
             name="pocketsre-discord",
         )

@@ -1,6 +1,5 @@
-from datetime import UTC, datetime, timedelta
-from hashlib import sha256
-from hmac import compare_digest, new
+from datetime import UTC, datetime
+from hmac import compare_digest
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -12,6 +11,7 @@ from app.api.dependencies import actions, incidents
 from app.config import get_settings
 from app.incidents.service import IncidentService
 from app.shared.contracts import ActionRequest, ActionResult, Incident, IncidentCreate, MagicLinkClaims
+from app.shared.magic_link import make_console_link, signature as _sign
 
 router = APIRouter()
 
@@ -70,16 +70,12 @@ def execute_action(payload: ActionRequest, service: ActionService = Depends(acti
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
 
-def _signature(payload: str) -> str:
-    return new(get_settings().magic_link_secret.encode(), payload.encode(), sha256).hexdigest()
-
-
 @router.post("/api/incidents/{incident_id}/magic-link")
 def create_magic_link(incident_id: UUID, request: Request, actor_id: str) -> dict[str, str]:
-    expires_at = datetime.now(UTC) + timedelta(minutes=15)
-    payload = f"{incident_id}:{actor_id}:{int(expires_at.timestamp())}"
-    token = f"{payload}:{_signature(payload)}"
-    return {"url": str(request.base_url).rstrip("/") + f"/console?token={token}"}
+    url = make_console_link(
+        str(request.base_url), incident_id, actor_id, get_settings().magic_link_secret
+    )
+    return {"url": url}
 
 
 def parse_magic_link(token: str) -> MagicLinkClaims:
@@ -89,6 +85,6 @@ def parse_magic_link(token: str) -> MagicLinkClaims:
         expires_at = datetime.fromtimestamp(int(timestamp), tz=UTC)
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid console link") from exc
-    if not compare_digest(signature, _signature(payload)) or expires_at <= datetime.now(UTC):
+    if not compare_digest(signature, _sign(payload, get_settings().magic_link_secret)) or expires_at <= datetime.now(UTC):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Expired or invalid console link")
     return MagicLinkClaims(incident_id=UUID(incident_id), actor_id=actor_id, expires_at=expires_at)
