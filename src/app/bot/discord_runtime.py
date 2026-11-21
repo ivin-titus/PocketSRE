@@ -854,6 +854,7 @@ async def run_discord_bot(
     decision_base_url: str | None = None,
     decision_model: str = "gemini-decision-1",
     gemini_api_key: str | None = None,
+    default_persona: str = "kiwi",
 ) -> None:
     bot = make_bot(
         incidents,
@@ -877,6 +878,7 @@ async def run_discord_bot(
         decision_base_url=decision_base_url,
         decision_model=decision_model,
         gemini_api_key=gemini_api_key,
+        default_persona=default_persona,
     )
     await bot.start(token)
 

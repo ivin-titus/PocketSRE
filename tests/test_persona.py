@@ -1,3 +1,6 @@
+import inspect
+
+from app.bot.discord_runtime import run_discord_bot
 from app.persona.presentation import Language, Persona, Presentation, detect_language
 from app.shared.contracts import ActionRequest, ActorRole, RunbookAction
 
@@ -25,3 +28,7 @@ def test_personas_change_presentation_not_action_contract() -> None:
     )
     assert request.action is RunbookAction.RESTART_SERVICE
     assert request.service == "yuki-core-api"
+
+
+def test_discord_runtime_accepts_configured_default_persona() -> None:
+    assert "default_persona" in inspect.signature(run_discord_bot).parameters
