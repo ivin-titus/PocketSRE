@@ -85,6 +85,25 @@ class Database:
             )
             conn.commit()
 
+    def list_open_incidents(self) -> list[dict]:
+        """Open/triaged incidents — restores the in-memory store after a restart."""
+        sql = (
+            "SELECT id, service_name, status, severity, error_message"
+            " FROM incidents WHERE status IN ('open', 'triaged') ORDER BY created_at"
+        )
+        with psycopg.connect(self._dsn) as conn, conn.cursor() as cur:
+            cur.execute(sql)
+            return [
+                {
+                    "id": r[0],
+                    "service_name": r[1],
+                    "status": r[2],
+                    "severity": r[3],
+                    "error_message": r[4],
+                }
+                for r in cur.fetchall()
+            ]
+
     def append_audit(
         self,
         incident_id: UUID,

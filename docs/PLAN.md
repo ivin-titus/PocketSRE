@@ -15,9 +15,9 @@
 | RBAC core gate (LEAD + approval for mutations) | ✅ Done | Enforced in `execute()`; Discord roles mapped via `actor_role_for()` |
 | Magic-link token signing (HMAC, 15-min) | ✅ Done | Shared `shared/magic_link.py`; alert cards embed the console link |
 | Yuki key pool + LLM router | ✅ Done | `ai/key_pool.py`, `ai/router.py`, tested |
-| Infra docs local load (`docs/infra`) | ⚠️ Partial | Loads into prompt string; never injected (no LLM call) |
+| Infra docs local load (`docs/infra`) | ✅ Done | `load_infra_context(db)` → injected into every `classify_message` triage prompt (24KB cap); file fallback when DB empty |
 | FastAPI skeleton + incident CRUD + execute | ✅ Done | `/health`, `/api/incidents`, `/api/actions/plan`, `/api/actions/execute` |
-| Docker packaging (`pocketsre-core`) | ⚠️ Partial | `python:3.14-slim` now; compose still lacks SSH/doc mounts |
+| Docker packaging (`pocketsre-core`) | ✅ Done | `python:3.14-slim`, no Node stage; compose mounts SSH key + `docs/infra` read-only; smoke-verified |
 | Audit log | ✅ Done | `audit_logs` Neon write-through + optional `audit_log.jsonl` mirror |
 | **SSH execution (Paramiko)** | ✅ Done | `actions/ssh_executor.py` — timeouts, exit-code capture, `POST /api/actions/execute` |
 | **Tool-call registry** | ✅ Done | `actions/tools.py` — name/description/mutating per tool; LLM-ready schemas |
@@ -27,7 +27,7 @@
 | **Discord RBAC + DM guards** | ✅ Done | `ROLE_PERMISSIONS` config (`SRE-Lead`→lead, `DevOps`→responder, `Junior-Dev`→viewer), `guild_only` on all commands, DM early-return, highest-rank wins |
 | **Approval surfaces** (buttons, `/approve`, magic-link) | ✅ Done | Buttons + `/approve` slash + `@PocketSRE approve` text + console-side approve pills (click = approval, runs as LEAD) |
 | **Devin dispatch** (code-regression path) | ✅ Done | `swe/dispatch.py` posts to `/v1/sessions` (stub fallback); `swe/tracker.py` — code-level → GitHub Issue + Linear `issueCreate`, infra-only → Linear only; `link_pr()` comments PR URL on both; `pr_status()` polls merge state; `pr_watch_consumer` task posts follow-ups (PR opened → merged-by → health re-check → resolution, stale-PR re-ping at `PR_WATCH_TIMEOUT_MINUTES`); PocketSRE never merges — human SWE owns merge; all gated by budget governor + lead role |
-| **NeonDB persistence** | ⚠️ Partial | `storage/db.py` — psycopg write-through for `incidents`/`audit_logs`/`budget_ledger` (PRD DDL), `SELECT 1` keepalive, JSONL audit mirror; graceful in-memory fallback when `NEON_DATABASE_URL` unset |
+| **NeonDB persistence** | ✅ Done | `storage/db.py` — psycopg write-through for `incidents`/`audit_logs`/`budget_ledger` (PRD DDL), `SELECT 1` keepalive, JSONL audit mirror, open incidents restored into `IncidentService` on startup (`restore_from_db`); graceful in-memory fallback when `NEON_DATABASE_URL` unset |
 | **Budget governor** ($5 cap, per-provider ledger) | ✅ Done | `shared/budget.py` — pre-call `check()` enforces provider caps (`BUDGET_DEVIN_USD`/`LLM`/`SARVAM`/`SMALLEST`) + $5/incident cap + optional `BUDGET_*_DAILY_USD` per-day caps → `BudgetExhaustedError`; Neon `budget_ledger` write-through with in-memory fallback; Devin dispatch gated + recorded (`DEVIN_SESSION_COST_ESTIMATE_USD`), LLM calls gated (+ `LLM_CALL_COST_ESTIMATE_USD`); `/api/console/spend` returns incident + provider totals vs caps |
 | **Loop guard / escalation dossier** | ✅ Done | `_loop_guard` caps mutating trials (`MAX_TRIALS_PER_INCIDENT`) + blocks repeat mutations → `EscalationRequiredError` with 4-pillar dossier; Discord renders a dossier embed, APIs return 409 + dossier JSON, escalation audited |
 | **Web console UI** (incident page, action pills, logs) | ✅ Done | `/console/` — token-gated incident detail, tool pills w/ confirm-gate on mutations, result/log panes, spend gauge, SSE feed |

@@ -46,6 +46,8 @@ async def lifespan(app: FastAPI):
     app.state.budget = BudgetGovernor(db, settings)
     app.state.audit_log = AuditLog(db=db)
     app.state.incidents = IncidentService(db=db)
+    if db is not None:
+        await asyncio.to_thread(app.state.incidents.restore_from_db)
     app.state.keepalive_task = (
         asyncio.create_task(db_keepalive(db), name="pocketsre-db-keepalive")
         if db is not None

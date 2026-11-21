@@ -2,11 +2,14 @@ services:
   pocketsre-core:
     container_name: pocketsre-core
     build: .
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false  # fall back to .env.example defaults; copy it to .env first
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
       # Read-only mounts: key + sanitized infra docs never enter the image.
-      - ${SSH_KEY_PATH:-~/.ssh/pocketsre_bot_ed25519}:/app/.ssh/pocketsre_bot_ed25519:ro
+      # `~` is NOT expanded inside ${...} — SSH_KEY_PATH must be absolute.
+      - ${SSH_KEY_PATH:-${HOME}/.ssh/pocketsre_bot_ed25519}:/app/.ssh/pocketsre_bot_ed25519:ro
       - ./docs/infra:/app/docs/infra:ro
     restart: unless-stopped

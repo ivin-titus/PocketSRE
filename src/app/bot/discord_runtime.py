@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import time
 from collections.abc import Callable
 
 from app.actions.service import ActionService, EscalationRequiredError
@@ -293,7 +294,7 @@ def make_bot(
                         "session_id": dispatcher._last_session_id,
                         "channel": interaction.channel,
                         "pr_url": None,
-                        "dispatched_at": asyncio.get_event_loop().time(),
+                        "dispatched_at": time.monotonic(),
                         "reminded": False,
                     }
                 )
@@ -366,7 +367,6 @@ def make_bot(
         """Follow-up loop: poll Devin session → PR appears → poll GitHub merge state →
         post transparency updates; re-ping lead on stale PRs; resolve incident on merge."""
         await bot.wait_until_ready()
-        import time
 
         while True:
             await asyncio.sleep(pr_watch_interval_seconds)

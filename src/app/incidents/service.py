@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from app.shared.contracts import Incident, IncidentCreate, IncidentStatus
+from app.shared.contracts import Incident, IncidentCreate, IncidentSeverity, IncidentStatus
 from app.storage.db import Database
 
 
@@ -55,4 +55,22 @@ class IncidentService:
 
     def list_all(self) -> list[Incident]:
         return list(self._incidents.values())
+
+    def restore_from_db(self) -> int:
+        """Reload open/triaged incidents from Neon on startup (restart survival)."""
+        if self._db is None:
+            return 0
+        restored = 0
+        for row in self._db.list_open_incidents():
+            incident = Incident(
+                id=UUID(row["id"]),
+                source="restored",
+                service=row["service_name"],
+                summary=row["error_message"] or "",
+                severity=IncidentSeverity(row["severity"]),
+                status=IncidentStatus(row["status"]),
+            )
+            self._incidents[incident.id] = incident
+            restored += 1
+        return restored
 
