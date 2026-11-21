@@ -1,1 +1,0 @@
-"""Bounded, typed infrastructure actions."""

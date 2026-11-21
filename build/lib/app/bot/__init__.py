@@ -1,1 +1,0 @@
-"""Discord adapter boundary."""

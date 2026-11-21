@@ -1,1 +1,0 @@
-"""PocketSRE control-plane application."""
