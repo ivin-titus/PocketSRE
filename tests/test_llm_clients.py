@@ -8,7 +8,7 @@ import pytest
 from app.ai.factory import build_llm_router
 from app.ai.key_pool import KeyPool
 from app.ai.router import LLMRouter
-from app.ai.triage import classify_message
+from app.ai.triage import classify_message, is_status_query
 from app.config import Settings
 
 
@@ -188,6 +188,10 @@ def test_classify_message_falls_back_to_detected_manglish_language() -> None:
     router = LLMRouter(FakeProvider(), KeyPool(["k"]), "m")
     out = run(classify_message(router, "core api down aayi, onnu nokk"))
     assert out["response_language"] == "manglish"
+
+
+def test_manglish_status_query_is_deterministically_recognized() -> None:
+    assert is_status_query("Yuki de services ellam okay aano?")
 
 
 def test_classify_message_bad_json_returns_none() -> None:

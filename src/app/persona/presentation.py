@@ -20,7 +20,7 @@ class Language(str, Enum):
 
 _MALAYALAM = re.compile(r"[\u0D00-\u0D7F]")
 _DEVANAGARI = re.compile(r"[\u0900-\u097F]")
-_MANGLISH_WORDS = {"aanu", "aayi", "undo", "ille", "nokk", "cheyy", "venam", "entha", "pakshe"}
+_MANGLISH_WORDS = {"aanu", "aano", "aayi", "undo", "ille", "nokk", "cheyy", "venam", "entha", "pakshe", "ellam"}
 _HINGLISH_WORDS = {"hai", "kya", "kaise", "karo", "karna", "kar", "nahi", "nahin", "theek", "thik"}
 
 

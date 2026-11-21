@@ -21,7 +21,7 @@ from app.shared.contracts import (
     RunbookAction,
 )
 from app.ai.router import LLMRouter
-from app.ai.triage import classify_message
+from app.ai.triage import classify_message, is_status_query
 from app.ai.decision import classify_alert
 from app.persona.presentation import Persona, Presentation, detect_language, language_from
 from app.shared.budget import BudgetExhaustedError, BudgetGovernor
@@ -592,6 +592,7 @@ def make_bot(
     @bot.event
     async def on_ready() -> None:
         await bot.tree.sync()
+        print(f"[DISCORD] Connected as {bot.user}.", flush=True)
         if alerts is not None:
             bot.loop.create_task(alert_consumer(), name="pocketsre-alert-consumer")
         bot.loop.create_task(pr_watch_consumer(), name="pocketsre-pr-watch")
@@ -721,9 +722,11 @@ def make_bot(
                         ),
                     )
                     return
-                return  # "other": not our business
+                # A model may classify colloquial/code-mixed health checks as
+                # "other". Let the deterministic multilingual status matcher
+                # decide before intentionally ignoring it.
 
-            if any(k in lowered for k in ("fine", "status", "healthy", "everything ok")):
+            if is_status_query(message.content):
                 await message.channel.send(
                     embed=await status_embed(presentation_for(message.channel, message.content))
                 )

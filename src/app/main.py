@@ -23,6 +23,19 @@ from app.swe.tracker import IssueTracker
 from app.bot.discord_runtime import run_discord_bot, stop_task
 
 
+def report_background_task_failure(task: asyncio.Task[object]) -> None:
+    """Surface Discord/poller task failures in container logs instead of hiding them."""
+    if task.cancelled():
+        return
+    try:
+        task.result()
+    except Exception as exc:
+        print(
+            f"[{task.get_name()}] stopped unexpectedly: {type(exc).__name__}: {exc}",
+            flush=True,
+        )
+
+
 async def db_keepalive(db: Database) -> None:
     """Neon suspends idle computes; ping periodically to keep it warm."""
     while True:
@@ -115,6 +128,7 @@ async def lifespan(app: FastAPI):
             ),
             name="pocketsre-discord",
         )
+        app.state.discord_task.add_done_callback(report_background_task_failure)
     try:
         yield
     finally:

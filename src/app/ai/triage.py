@@ -10,6 +10,18 @@ from app.ai.router import LLMRouter
 from app.persona.presentation import detect_language, language_from
 
 _SERVICES = "yuki-core-api, yuki-discord-bot, yuki-telegram-bot, yuki-horiz-client, yuki-redis"
+_STATUS_MARKERS = (
+    "fine", "status", "healthy", "everything ok", "everything okay",
+    "ellam okay", "ellam ok", "ok aano", "okay aano", "entha status",
+    "sab theek", "theek hai", "thik hai", "services okay hai",
+    "ശരിയാണോ", "എല്ലാം ഒക്കെയാണോ", "സർവീസുകൾ ഓക്കേ",
+)
+
+
+def is_status_query(message: str) -> bool:
+    """Deterministic multilingual status fallback; never selects an action."""
+    normalized = " ".join(message.casefold().split())
+    return any(marker in normalized for marker in _STATUS_MARKERS)
 
 _PROMPT = """You are PocketSRE's triage parser for the Yuki infra
 (services: {services}).
