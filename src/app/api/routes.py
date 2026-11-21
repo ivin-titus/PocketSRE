@@ -5,7 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from app.actions.service import ActionService
+from app.actions.service import ActionService, EscalationRequiredError
 from app.actions.ssh_executor import SshExecutionError, SshNotConfiguredError
 from app.ai.knowledge import load_infra_context
 from app.api.dependencies import actions, incidents
@@ -98,6 +98,11 @@ def execute_action(payload: ActionRequest, service: ActionService = Depends(acti
     """Validate and run a whitelisted runbook on the target VM over SSH."""
     try:
         return service.execute(payload)
+    except EscalationRequiredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"reason": str(exc), "dossier": exc.dossier},
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     except PermissionError as exc:

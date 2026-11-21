@@ -21,7 +21,7 @@
 | Audit log | ✅ Done | `audit_logs` Neon write-through + optional `audit_log.jsonl` mirror |
 | **SSH execution (Paramiko)** | ✅ Done | `actions/ssh_executor.py` — timeouts, exit-code capture, `POST /api/actions/execute` |
 | **Tool-call registry** | ✅ Done | `actions/tools.py` — name/description/mutating per tool; LLM-ready schemas |
-| **Autonomy mode enforcement** | ⚠️ Partial | `FULL_AUTONOMY` auto-runs + announces; `READ_AUTO` free-run vs `STRICT_CONFIRMATION` ask-gate not yet differentiated |
+| **Autonomy mode enforcement** | ✅ Done | `READ_AUTO`: diagnostics auto-run on alert + announce post-facto, mutations still ask · `STRICT_CONFIRMATION`: everything is click-gated · `FULL_AUTONOMY`: auto-runs restart + announces |
 | **Proactive flow** | ✅ Done | Card→buttons→execute→report→resolution loop live incl. Devin dispatch button + mode badge |
 | **Reactive flow** (`/status` live, free-text triage) | ✅ Done | LLM classification (`ai/triage.py`) parses intent/service/severity; keyword heuristics remain deterministic fallback when router absent or LLM fails |
 | **Discord RBAC + DM guards** | ✅ Done | `ROLE_PERMISSIONS` config (`SRE-Lead`→lead, `DevOps`→responder, `Junior-Dev`→viewer), `guild_only` on all commands, DM early-return, highest-rank wins |
@@ -29,14 +29,14 @@
 | **Devin dispatch** (code-regression path) | ⚠️ Partial | `swe/dispatch.py` posts to `/v1/sessions` with stub fallback; button on cards (lead-gated); Linear/GitHub linking pending |
 | **NeonDB persistence** | ⚠️ Partial | `storage/db.py` — psycopg write-through for `incidents`/`audit_logs`/`budget_ledger` (PRD DDL), `SELECT 1` keepalive, JSONL audit mirror; graceful in-memory fallback when `NEON_DATABASE_URL` unset |
 | **Budget governor** ($5 cap, per-provider ledger) | ❌ Pending | Nothing |
-| **Loop guard / escalation dossier** | ❌ Pending | Nothing |
+| **Loop guard / escalation dossier** | ✅ Done | `_loop_guard` caps mutating trials (`MAX_TRIALS_PER_INCIDENT`) + blocks repeat mutations → `EscalationRequiredError` with 4-pillar dossier; Discord renders a dossier embed, APIs return 409 + dossier JSON, escalation audited |
 | **Web console UI** (incident page, action pills, logs) | ✅ Done | `/console/` — token-gated incident detail, tool pills w/ confirm-gate on mutations, result/log panes, spend gauge, SSE feed |
 | **Mission-control page** (health cards, spend gauge, SSE) | ✅ Done | `/console/mission-control.html` — live presence cards (15s refresh), spend gauge, SSE audit feed |
 | **Knowledge upload + injection into triage** | ✅ Done | `POST /api/knowledge/upload` (admin-secret gated, .md/.txt ≤256KB) → `infra_knowledge_docs` in Neon; `load_infra_context(db)` is DB-first, `docs/infra/` is the sanitized public fallback; injected into every triage prompt. Repo docs scrubbed of IP/key names (repo is public) — real topology goes via upload only. `/pocketsre learn-infra` deferred (upload API covers it) |
 | **Gemini + OpenAI client wiring** | ✅ Done | `ai/clients/gemini.py` + `ai/clients/openai.py` (Yuki ports adapted to LLMProvider), `ai/factory.py` picks provider via `AI_PROVIDER`; wired into reactive triage |
 | `scripts/inject_mock_incident.sh` | ❌ Pending | Referenced in README; doesn't exist |
 
-**Phase readiness:** Phase 1 ≈ 65% · Phase 2 (voice notes/code-mixing) = 0% · Phase 3 (live voice) = 0%
+**Phase readiness:** Phase 1 ≈ 70% · Phase 2 (voice notes/code-mixing) = 0% · Phase 3 (live voice) = 0%
 
 **Verified environment facts:**
 - SSH to target VM works: `ssh -i ~/.ssh/pocketsre_bot_ed25519 pocketsre@<YUKI_VM_IP> 'sudo /usr/bin/docker logs --tail 10 yuki-telegram-bot'`

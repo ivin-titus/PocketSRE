@@ -12,7 +12,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
-from app.actions.service import ActionService
+from app.actions.service import ActionService, EscalationRequiredError
 from app.actions.tools import TOOL_REGISTRY
 from app.api.dependencies import actions, incidents
 from app.api.routes import parse_magic_link
@@ -82,6 +82,11 @@ def console_action(
     )
     try:
         result = action_service.execute(req)
+    except EscalationRequiredError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": str(exc), "dossier": exc.dossier},
+        ) from exc
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:

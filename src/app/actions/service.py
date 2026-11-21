@@ -9,16 +9,27 @@ from .ssh_executor import SshExecutor, SshNotConfiguredError
 from .tools import is_mutating
 
 
+class EscalationRequiredError(Exception):
+    """Raised when an incident exhausts its autonomy budget (max trials / repeat attempt).
+    Carries a 4-pillar dossier for the break-glass hand-off."""
+
+    def __init__(self, reason: str, dossier: dict) -> None:
+        super().__init__(reason)
+        self.dossier = dossier
+
+
 class ActionService:
     def __init__(
         self,
         audit_log: AuditLog,
         executor: SshExecutor | None = None,
         presence: PresenceProbe | None = None,
+        max_trials: int = 3,
     ) -> None:
         self.audit_log = audit_log
         self.executor = executor
         self.presence = presence
+        self.max_trials = max_trials
         self._results: dict = {}
 
     def results_for(self, incident_id) -> list[ActionResult]:
@@ -74,10 +85,66 @@ class ActionService:
             return f"executed_unverified ({'; '.join(reasons)})"
         return "verified"
 
+    def _loop_guard(self, request: ActionRequest) -> None:
+        """Anti-loop: cap mutating trials per incident; never re-run an already-tried mutation."""
+        prior = [r for r in self._results.get(request.incident_id, []) if is_mutating(r.action)]
+        halt: str | None = None
+        if any(r.action == request.action for r in prior):
+            halt = "repeat attempt blocked"
+        elif len(prior) >= self.max_trials:
+            halt = "max trials reached"
+        if halt:
+            self.audit_log.append(
+                AuditEntry(
+                    incident_id=request.incident_id,
+                    actor_id=request.actor_id,
+                    actor_role=request.actor_role,
+                    action=request.action,
+                    outcome="escalated",
+                )
+            )
+            raise EscalationRequiredError(
+                (
+                    f"{request.action.value} already attempted — escalating instead of looping."
+                    if halt == "repeat attempt blocked"
+                    else f"Incident exhausted its autonomy budget ({self.max_trials} mutating trials) — escalating to lead."
+                ),
+                self.escalation_dossier(request.incident_id, halt),
+            )
+
+    def escalation_dossier(self, incident_id, halt_reason: str) -> dict:
+        """4-pillar analyst dossier: happened / tried / halted / next steps."""
+        results = self.results_for(incident_id)
+        mutating = [r for r in results if is_mutating(r.action)]
+        health = (
+            self.presence.health_reasons(results[-1].service)
+            if self.presence is not None and results
+            else None
+        )
+        return {
+            "what_happened": (
+                results[0].status if results else "incident opened; no action run yet"
+            ),
+            "what_was_tried": [
+                {"action": r.action.value, "status": r.status} for r in results
+            ],
+            "why_halted": halt_reason,
+            "trials_used": len(mutating),
+            "max_trials": self.max_trials,
+            "current_health": health or ["presence coverage unavailable"],
+            "next_steps": [
+                "Inspect live logs via the console log tail.",
+                "Run an ad-hoc diagnostic from the break-glass console.",
+                "Dispatch Devin if the failure is a code regression.",
+                "SSH in as the lead and resolve manually if the fault is outside the whitelist.",
+            ],
+        }
+
     def execute(self, request: ActionRequest) -> ActionResult:
         """Validate, then actually run the whitelisted command on the target VM."""
         command = self.validate(request)
         if is_mutating(request.action):
+            self._loop_guard(request)
             self._preflight(request.service)
         if self.executor is None:
             raise SshNotConfiguredError("SSH executor is not configured for this instance.")

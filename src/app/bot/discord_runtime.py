@@ -4,7 +4,7 @@ import asyncio
 import contextlib
 from collections.abc import Callable
 
-from app.actions.service import ActionService
+from app.actions.service import ActionService, EscalationRequiredError
 from app.incidents.alerts import AlertBridge, AlertEvent
 from app.incidents.presence import ROUTE_CONTAINER_DEFAULTS
 from app.incidents.service import IncidentService
@@ -85,6 +85,40 @@ def resolution_embed(incident: Incident):
     return embed
 
 
+def dossier_embed(dossier: dict, reason: str):
+    """Break-glass escalation: what happened / tried / halted / next steps."""
+    import discord
+
+    tried = "\n".join(
+        f"- `{t['action']}` → {t['status']}" for t in dossier.get("what_was_tried", [])
+    ) or "none"
+    embed = discord.Embed(
+        title="🛑 Escalation — PocketSRE out of depth",
+        description=f"**{truncate(reason, 300)}**",
+        color=discord.Color.dark_red(),
+    )
+    embed.add_field(
+        name="What happened", value=truncate(str(dossier.get("what_happened", "")), 400), inline=False
+    )
+    embed.add_field(name="What was tried", value=truncate(tried, 600), inline=False)
+    embed.add_field(
+        name="Current health",
+        value=truncate("; ".join(dossier.get("current_health", [])), 400),
+        inline=False,
+    )
+    embed.add_field(
+        name="Recommended next steps",
+        value=truncate("\n".join(f"- {s}" for s in dossier.get("next_steps", [])), 700),
+        inline=False,
+    )
+    embed.add_field(
+        name="Autonomy budget",
+        value=f"`{dossier.get('trials_used')}/{dossier.get('max_trials')}` mutating trials used",
+        inline=True,
+    )
+    return embed
+
+
 def make_bot(
     incidents: IncidentService,
     actions: ActionService,
@@ -130,6 +164,9 @@ def make_bot(
         )
         try:
             result = await asyncio.to_thread(actions.execute, request)
+        except EscalationRequiredError as exc:
+            await channel.send(embed=dossier_embed(exc.dossier, str(exc)))
+            return None
         except PermissionError as exc:
             await channel.send(f"⛔ `{action.value}` denied: {exc}")
             return None
@@ -251,6 +288,20 @@ def make_bot(
                     embed=alert_embed(incident, console_url(incident, "lead"), autonomy_mode),
                     view=IncidentApprovalView(incident),
                 )
+                if autonomy_mode in ("read_auto", "full_autonomy"):
+                    # READ_AUTO: diagnostics run without asking, announce post-facto.
+                    await channel.send(
+                        "🔍 Read-auto mode: running diagnostics (logs + inspect) now."
+                    )
+                    for diag in (RunbookAction.FETCH_SERVICE_LOGS, RunbookAction.INSPECT_SERVICE):
+                        await run_action(
+                            channel,
+                            incident,
+                            diag,
+                            actor_id="pocketsre-autonomy",
+                            role=ActorRole.LEAD,
+                            approved=True,
+                        )
                 if autonomy_mode == "full_autonomy":
                     await channel.send("🤖 Full-autonomy mode: executing restart now.")
                     await run_action(
