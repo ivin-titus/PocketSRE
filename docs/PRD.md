@@ -122,7 +122,8 @@ PocketSRE decouples the core platform intelligence from the visual and conversat
 │  • Knowledge Transfer Engine: Markdown architecture doc ingestion & topology context RAG    │
 │  • Pluggable LLM Router: Dual-Key Google Gemini (Demo) + OpenAI SDK (Self-Hosted/vLLM/Ollama│
 │  • Discord Voice Pipeline: SSRC Demux + Opus RTP + Sarvam Bulbul/Saaras + Code-Mixing Engine│
-│  • Decision Engine: Free API-based decision endpoints (with architectural slot for Laya)    │
+│  • Decision Engine: Gemini Decision 1 (Decisions API, 200 RPM / 10K RPD free) — pluggable  │
+│    provider abstraction reserved for local decision models (e.g. Laya, Ollama-hosted)      │
 │  • Out-of-Band Remote SSH: Paramiko SSH Client (Mounts private key /app/.ssh/id_ed25519)    │
 │  • Autonomous Repair: Pluggable SWE Engine (Devin API Demo + Local OpenCode Runner)         │
 │  • Budget Governor: Thread-safe spend tracker enforcing hard $5.00 limit                   │
@@ -164,7 +165,7 @@ PocketSRE decouples the core platform intelligence from the visual and conversat
 * **Documentation & Infra Knowledge Store:** Ingests markdown architecture diagrams, service relationship maps, and incident playbooks into NeonDB (`infra_knowledge_docs`). Injects relevant topology context into triage reasoning to ground PocketSRE in private infrastructure specifics (UNIX socket paths, internal ports, upstream APIs).
 * **Project Yuki Foundation Modules:** Directly adapts Project Yuki's battle-tested core modules—specifically the `APIKeyPool` multi-key rotation router, exponential backoff handler, and asynchronous presence poller—accelerating MVP development and guaranteeing high reliability during the 12-hour build.
 * **Discord Voice Pipeline & Multi-Language Mirroring Engine:** Implements Discord's Voice Gateway protocol: outbounds stream 48kHz PCM through FFmpeg into Opus RTP UDP packets; inbounds demux speaker SSRC identifiers and decode Opus frames to PCM via `discord-ext-voice-receive` for **Sarvam Saaras STT**, powered by the **Multi-Language Mirroring Engine** (pure English, pure Malayalam/Hindi, and adaptive Manglish/Hinglish via Sarvam, with fallback via Microsoft `edge-tts`).
-* **Decision API Layer:** **Free API-based decision endpoints** / lightweight reflex classification endpoints for the 12-hour sprint, with an architectural abstraction slot for **Laya** (421M parameter non-autoregressive decision model) for future edge deployment.
+* **Decision API Layer:** **Gemini Decision 1 (`gemini-decision-1` via the Decisions API, `v1beta`)** is the primary classifier — purpose-built binary/categorical/rubric verdicts (is-real-incident + which-service + severity) with zero output tokens, on the free tier (200 RPM / 10K RPD per project). The decision call sits behind a `DECISION_PROVIDER` abstraction (`"gemini_decision"` default) with a reserved slot for **local decision models** — e.g. **Laya** (421M non-autoregressive decision model) or Ollama-hosted small models — wired via a configurable `DECISION_BASE_URL` for air-gapped/edge deployment. Alert verdicts degrade gracefully to strict keyword heuristics when no decision backend is reachable.
 * **Audio Synthesis:** **Sarvam AI (Bulbul v4)** for pure and code-mixed speech (English, Malayalam, Hindi), with Microsoft **`edge-tts`** as a zero-cost, zero-API-key fallback.
 * **Pluggable Autonomous SWE Engine:** **Devin API (`POST /v1/sessions`)** (Cognition AI - Demo Primary) with swappable support for local/air-gapped autonomous agents (**OpenCode**, **SWE-agent**, or local containerized runners) via a unified `AutonomousSweProvider` interface.
 * **Project Tracking:** **GitHub Issues REST API** (PAT) + **Linear GraphQL API**.
@@ -184,6 +185,8 @@ PocketSRE strictly decouples sensitive credentials from declarative policies and
     KNOWLEDGE_INGESTION_ENABLED = True
     SWE_AGENT_PROVIDER = "devin"  # Options: "devin" (Cognition AI - Demo Primary), "local_opencode" (Local Harness), "generic_webhook"
     LOCAL_SWE_ENDPOINT = "http://localhost:8080/v1/remediate"
+    DECISION_PROVIDER = "gemini_decision"  # Options: "gemini_decision" (Decisions API, free tier), "local" (Laya / Ollama via DECISION_BASE_URL), "keywords" (no model)
+    DECISION_BASE_URL = None  # e.g. "http://localhost:11434" for local decision models
     ```
   * **Infrastructure Targets:** Pinned container names (`CONTAINER_TARGET = "yuki-core-api"`), SSH ports, and remote log paths.
   * **RBAC Role Mapping:** Maps Discord roles to permissible actions:

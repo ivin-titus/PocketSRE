@@ -8,8 +8,9 @@
 
 | Capability | Status | Notes |
 |---|---|---|
-| Presence poller (all deterministic triggers, dedup, auto-resolve) | ✅ Done | `incidents/poller.py`, tested |
-| Discord webhook alert ingestion | ✅ Done | Parses alerts, creates incident, emits `opened` on the alert bridge |
+| Presence poller (all deterministic triggers, dedup, auto-resolve) | ✅ Done | `incidents/poller.py` — 2-consecutive-failure flap threshold; resolves only incidents it opened (no cross-source resolution) |
+| Discord webhook alert ingestion | ✅ Done | Layered gate: container-name + alert-keyword pre-filter, dedup per service, `opened` on alert bridge |
+| Alert-vs-noise decision classification | ✅ Done | `ai/decision.py` — Gemini Decision 1 (`gemini-decision-1`, Decisions API: noul + choice verdicts, zero output tokens) behind `DECISION_PROVIDER`; `local` provider for Laya/Ollama-class models via `DECISION_BASE_URL`; budget-gated; keyword fallback |
 | Service→container name resolution | ✅ Done | `actions/runbooks.py` aliases→pinned containers |
 | Typed runbook whitelist | ✅ Done | Enum-mapped, validated params; covers every sudoers entry — logs/inspect/top per container, restart/stop/start, `docker ps -a`, `docker stats --no-stream`, `docker system prune -f`, nginx restart/status/`nginx -t`, `journalctl -u nginx|docker`, `systemctl status docker` |
 | RBAC core gate (LEAD + approval for mutations) | ✅ Done | Enforced in `execute()`; Discord roles mapped via `actor_role_for()` |

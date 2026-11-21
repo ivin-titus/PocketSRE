@@ -67,6 +67,10 @@ class Settings(BaseSettings):
     execution_privilege_mode: str = "non_root"  # non_root | full_root (PRD §3)
     pr_watch_interval_seconds: float = 300.0  # poll cadence for Devin PR follow-ups
     pr_watch_timeout_minutes: float = 720.0  # stale-PR re-ping threshold
+    # Alert-vs-noise decision layer
+    decision_provider: str = "gemini_decision"  # gemini_decision | local | keywords
+    decision_model: str = "gemini-decision-1"
+    decision_base_url: str | None = None  # local decision model endpoint (Laya/Ollama-class)
 
 
     @property

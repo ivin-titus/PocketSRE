@@ -70,6 +70,7 @@ Toggle personalities instantly via Discord (`/pocketsre avatar kiwi` or `/pocket
 
 ### 8. 🏢 Enterprise Privacy & Sovereign LLM Support
 * **Dual-Key Gemini Flash Lite:** Primary fast multimodal inference for the hackathon showcase with automatic failover on HTTP 429.
+* **Gemini Decision 1:** Purpose-built alert-vs-noise classifier via the Decisions API (`gemini-decision-1`, free tier 200 RPM/10K RPD, zero output tokens), behind a `DECISION_PROVIDER` abstraction with a local-model slot (Laya/Ollama-class via `DECISION_BASE_URL`) and keyword fallback.
 * **OpenAI SDK Abstraction:** Can route 100% of telemetry to internal air-gapped models (**vLLM, Ollama, LocalAI**) over Tailscale, ensuring sensitive logs and code never leave the enterprise network.
 
 ### 9. 💰 Hard Budget Governor & Spend Circuit Breaker

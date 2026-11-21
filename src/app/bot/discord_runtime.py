@@ -22,6 +22,7 @@ from app.shared.contracts import (
 )
 from app.ai.router import LLMRouter
 from app.ai.triage import classify_message
+from app.ai.decision import classify_alert
 from app.shared.budget import BudgetExhaustedError, BudgetGovernor
 from app.shared.magic_link import make_console_link
 from app.shared.rbac import actor_role_for
@@ -140,6 +141,10 @@ def make_bot(
     tracker: IssueTracker | None = None,
     pr_watch_interval_seconds: float = 300.0,
     pr_watch_timeout_minutes: float = 720.0,
+    decision_provider: str = "keywords",
+    decision_base_url: str | None = None,
+    decision_model: str = "gemini-decision-1",
+    gemini_api_key: str | None = None,
 ):
     """Create the Discord adapter lazily so HTTP-only development needs no bot token."""
     import discord
@@ -462,27 +467,31 @@ def make_bot(
                 if embed.description:
                     content += f" {embed.description}"
 
-            lowered_content = content.lower()
-            # Gate ingestion: only real alert payloads (a Yuki container name or
-            # alert keywords + a known service) may open an incident — CI posts,
-            # git webhook noise and arbitrary messages are ignored.
-            named_containers = [
-                c
-                for c in (
-                    "yuki-core-api",
-                    "yuki-discord-bot",
-                    "yuki-telegram-bot",
-                    "yuki-horiz-client",
-                    "yuki-redis",
-                )
-                if c in lowered_content or c.replace("yuki-", "") in lowered_content
-            ]
-            alert_keywords = ("crash", "down", "error", "alert", "incident", "oom", "500", "unhealthy", "restart")
-            if not named_containers or not any(k in lowered_content for k in alert_keywords):
+            # Decision-model verdict (Gemini Decision 1 or local model); keyword
+            # heuristics stand in whenever no backend is reachable so detection
+            # never silently drops real alerts.
+            if budget is not None:
+                try:
+                    budget.check("llm")
+                except BudgetExhaustedError as exc:
+                    await message.channel.send(f"💸 Decision budget exhausted: {exc}")
+                    await bot.process_commands(message)
+                    return
+            verdict = await asyncio.to_thread(
+                classify_alert,
+                content,
+                provider=decision_provider,
+                gemini_api_key=gemini_api_key,
+                decision_model=decision_model,
+                local_base_url=decision_base_url,
+            )
+            if not verdict.is_incident:
                 await bot.process_commands(message)
                 return
+            if budget is not None and llm_call_cost_usd > 0:
+                budget.record("llm", llm_call_cost_usd)
 
-            detected_container = named_containers[0]
+            detected_container = verdict.service or "yuki-core-api"
 
             active = incidents.get_active_for_service(detected_container)
             if not active:
@@ -639,6 +648,10 @@ async def run_discord_bot(
     tracker: IssueTracker | None = None,
     pr_watch_interval_seconds: float = 300.0,
     pr_watch_timeout_minutes: float = 720.0,
+    decision_provider: str = "keywords",
+    decision_base_url: str | None = None,
+    decision_model: str = "gemini-decision-1",
+    gemini_api_key: str | None = None,
 ) -> None:
     bot = make_bot(
         incidents,
@@ -658,6 +671,10 @@ async def run_discord_bot(
         tracker=tracker,
         pr_watch_interval_seconds=pr_watch_interval_seconds,
         pr_watch_timeout_minutes=pr_watch_timeout_minutes,
+        decision_provider=decision_provider,
+        decision_base_url=decision_base_url,
+        decision_model=decision_model,
+        gemini_api_key=gemini_api_key,
     )
     await bot.start(token)
 
