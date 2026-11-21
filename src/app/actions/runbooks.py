@@ -1,4 +1,21 @@
-from app.shared.contracts import RunbookAction
+import re
+import shlex
+
+from app.shared.contracts import ActionParams, RunbookAction
+
+# grep patterns are applied in the remote shell pipeline, outside sudo. The charset
+# whitelist keeps them readable while shlex.quote makes injection impossible.
+_GREP_SAFE_PATTERN = re.compile(r"^[A-Za-z0-9 _.\-:|*+()\[\]^$]+$")
+
+
+def _log_filter_suffix(grep: str | None) -> str:
+    if not grep:
+        return ""
+    if not _GREP_SAFE_PATTERN.match(grep):
+        raise ValueError(
+            "grep pattern contains unsafe characters; allowed: letters, digits, space, _ . - : | * + ( ) [ ] ^ $"
+        )
+    return f" | grep -iE {shlex.quote(grep)}"
 
 # All available target containers on the Project Yuki target VM
 AVAILABLE_CONTAINERS: tuple[str, ...] = (
@@ -34,7 +51,7 @@ def resolve_container_name(service: str) -> str:
 
 RUNBOOKS: dict[RunbookAction, dict[str, str]] = {
     RunbookAction.FETCH_SERVICE_LOGS: {
-        container: f"sudo /usr/bin/docker logs --tail 50 {container}"
+        container: f"sudo /usr/bin/docker logs {container}"
         for container in AVAILABLE_CONTAINERS
     },
     RunbookAction.RESTART_SERVICE: {
@@ -56,11 +73,16 @@ RUNBOOKS: dict[RunbookAction, dict[str, str]] = {
 }
 
 
-def command_for(action: RunbookAction, service: str) -> str:
-    """Return only a declared command; caller input is never interpolated into shell text."""
+def command_for(action: RunbookAction, service: str, params: ActionParams | None = None) -> str:
+    """Return a declared command built from validated params only."""
     container = resolve_container_name(service)
     try:
-        return RUNBOOKS[action][container]
+        command = RUNBOOKS[action][container]
     except KeyError as exc:
         raise ValueError(f"No runbook for {action.value} on container {container}") from exc
+    if action is RunbookAction.FETCH_SERVICE_LOGS:
+        params = params or ActionParams()
+        command = f"sudo /usr/bin/docker logs --tail {params.tail_lines} {container}"
+        command += _log_filter_suffix(params.grep)
+    return command
 

@@ -1,8 +1,9 @@
 from app.shared.audit import AuditLog
-from app.shared.contracts import ActionRequest, ActionResult, ActorRole, AuditEntry, RunbookAction
+from app.shared.contracts import ActionRequest, ActionResult, ActorRole, AuditEntry
 
 from .runbooks import command_for
 from .ssh_executor import SshExecutor, SshNotConfiguredError
+from .tools import is_mutating
 
 
 class ActionService:
@@ -11,11 +12,10 @@ class ActionService:
         self.executor = executor
 
     def validate(self, request: ActionRequest) -> str:
-        command_for(request.action, request.service)
-        if request.action in (RunbookAction.RESTART_SERVICE, RunbookAction.STOP_SERVICE, RunbookAction.START_SERVICE):
+        if is_mutating(request.action):
             if request.actor_role is not ActorRole.LEAD or not request.approved:
                 raise PermissionError("Lifecycle actions require explicit approval from a lead.")
-        return command_for(request.action, request.service)
+        return command_for(request.action, request.service, request.params)
 
     def plan(self, request: ActionRequest) -> ActionResult:
         command = self.validate(request)

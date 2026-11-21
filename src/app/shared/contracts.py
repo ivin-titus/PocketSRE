@@ -50,6 +50,13 @@ class Incident(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+class ActionParams(BaseModel):
+    """Validated runbook parameters; never interpolated into shell text unsanitized."""
+
+    tail_lines: int = Field(default=50, ge=1, le=500)
+    grep: str | None = Field(default=None, max_length=128)
+
+
 class ActionRequest(BaseModel):
     incident_id: UUID
     action: RunbookAction
@@ -57,6 +64,7 @@ class ActionRequest(BaseModel):
     actor_id: str = Field(min_length=1, max_length=128)
     actor_role: ActorRole
     approved: bool = False
+    params: ActionParams = Field(default_factory=ActionParams)
 
 
 class ActionResult(BaseModel):
