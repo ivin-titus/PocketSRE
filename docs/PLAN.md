@@ -32,14 +32,14 @@
 | **Loop guard / escalation dossier** | ❌ Pending | Nothing |
 | **Web console UI** (incident page, action pills, logs) | ✅ Done | `/console/` — token-gated incident detail, tool pills w/ confirm-gate on mutations, result/log panes, spend gauge, SSE feed |
 | **Mission-control page** (health cards, spend gauge, SSE) | ✅ Done | `/console/mission-control.html` — live presence cards (15s refresh), spend gauge, SSE audit feed |
-| **Knowledge upload + injection into triage** | ❌ Pending | No `/api/knowledge/upload`, no `/pocketsre learn-infra` |
+| **Knowledge upload + injection into triage** | ✅ Done | `POST /api/knowledge/upload` (admin-secret gated, .md/.txt ≤256KB) → `infra_knowledge_docs` in Neon; `load_infra_context(db)` is DB-first, `docs/infra/` is the sanitized public fallback; injected into every triage prompt. Repo docs scrubbed of IP/key names (repo is public) — real topology goes via upload only. `/pocketsre learn-infra` deferred (upload API covers it) |
 | **Gemini + OpenAI client wiring** | ✅ Done | `ai/clients/gemini.py` + `ai/clients/openai.py` (Yuki ports adapted to LLMProvider), `ai/factory.py` picks provider via `AI_PROVIDER`; wired into reactive triage |
 | `scripts/inject_mock_incident.sh` | ❌ Pending | Referenced in README; doesn't exist |
 
 **Phase readiness:** Phase 1 ≈ 65% · Phase 2 (voice notes/code-mixing) = 0% · Phase 3 (live voice) = 0%
 
 **Verified environment facts:**
-- SSH to target VM works: `ssh -i ~/.ssh/pocketsre_bot_ed25519 pocketsre@161.118.252.7 'sudo /usr/bin/docker logs --tail 10 yuki-telegram-bot'`
+- SSH to target VM works: `ssh -i ~/.ssh/pocketsre_bot_ed25519 pocketsre@<YUKI_VM_IP> 'sudo /usr/bin/docker logs --tail 10 yuki-telegram-bot'`
 - `/etc/sudoers.d/pocketsre` on Yuki VM is configured and `visudo -cf` validated (sudo 1.9+ compatible: trailing wildcards only, absolute paths, no `requiretty`).
 - `docker logs *` wildcard permits extra args (`--tail N`), and `grep` pipelines work because grep runs outside sudo: `ssh ... 'sudo docker logs <c> | grep -i error'` — filters are part of the SSH shell string, not the sudo'd argv.
 - Gemini keys already provisioned; `GeminiClient` ports directly from `project-yuki/chat/api/app/services/ai/clients/gemini.py`.
@@ -150,7 +150,7 @@ detect → investigate → run fixing runbook (e.g. restart) → transparent rep
 - Kiwi/Vikram avatar personas (tone presets land free with Gemini prompts — stretch only).
 
 ## 5. Definition of done (operator-testable)
-1. `./scripts/inject_mock_incident.sh --scenario crash` → Discord card appears → approve → real `docker restart` runs on `161.118.252.7` → recovery verified → summary posted.
+1. `./scripts/inject_mock_incident.sh --scenario crash` → Discord card appears → approve → real `docker restart` runs on `<YUKI_VM_IP>` → recovery verified → summary posted.
 2. `/status` in Discord returns live presence + spend.
 3. Magic-link opens incident console on phone; approving there executes over SSH.
 4. Mission-control page shows live health cards, audit feed, spend gauge.

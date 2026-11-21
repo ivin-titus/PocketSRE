@@ -36,6 +36,13 @@ CREATE TABLE IF NOT EXISTS budget_ledger (
     amount_spent NUMERIC(10,4) DEFAULT 0.0000,
     timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS infra_knowledge_docs (
+    id SERIAL PRIMARY KEY,
+    doc_name VARCHAR(128) UNIQUE NOT NULL,
+    content TEXT NOT NULL,
+    uploaded_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
 """
 
 
@@ -105,6 +112,26 @@ class Database:
         with psycopg.connect(self._dsn) as conn, conn.cursor() as cur:
             cur.execute(sql, (str(incident_id) if incident_id else None, provider, amount))
             conn.commit()
+
+    def upsert_knowledge_doc(self, doc_name: str, content: str) -> None:
+        sql = (
+            "INSERT INTO infra_knowledge_docs (doc_name, content)"
+            " VALUES (%s, %s)"
+            " ON CONFLICT (doc_name) DO UPDATE SET"
+            "   content = EXCLUDED.content, uploaded_at = NOW()"
+        )
+        with psycopg.connect(self._dsn) as conn, conn.cursor() as cur:
+            cur.execute(sql, (doc_name, content))
+            conn.commit()
+
+    def list_knowledge_docs(self) -> list[dict]:
+        sql = "SELECT doc_name, content, uploaded_at FROM infra_knowledge_docs ORDER BY doc_name"
+        with psycopg.connect(self._dsn) as conn, conn.cursor() as cur:
+            cur.execute(sql)
+            return [
+                {"doc_name": r[0], "content": r[1], "uploaded_at": r[2].isoformat()}
+                for r in cur.fetchall()
+            ]
 
     def incident_spend(self, incident_id: UUID) -> float:
         sql = "SELECT COALESCE(SUM(amount_spent), 0) FROM budget_ledger WHERE incident_id = %s"

@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+from collections.abc import Callable
 
 from app.actions.service import ActionService
 from app.incidents.alerts import AlertBridge, AlertEvent
@@ -95,6 +96,7 @@ def make_bot(
     devin_api_key: str | None = None,
     role_permissions: dict[str, ActorRole] | None = None,
     llm_router: LLMRouter | None = None,
+    context_provider: Callable[[], str] | None = None,
 ):
     """Create the Discord adapter lazily so HTTP-only development needs no bot token."""
     import discord
@@ -328,7 +330,10 @@ def make_bot(
                 return
 
             # LLM classification first; keywords are the deterministic fallback.
-            classified = await classify_message(llm_router, message.content)
+            infra_ctx = context_provider() if context_provider else ""
+            classified = await classify_message(
+                llm_router, message.content, infra_context=infra_ctx
+            )
             if classified is not None:
                 if classified["intent"] == "status":
                     await message.channel.send(embed=await status_embed())
@@ -431,6 +436,7 @@ async def run_discord_bot(
     devin_api_key: str | None = None,
     role_permissions: dict[str, ActorRole] | None = None,
     llm_router: LLMRouter | None = None,
+    context_provider: Callable[[], str] | None = None,
 ) -> None:
     bot = make_bot(
         incidents,
@@ -442,6 +448,7 @@ async def run_discord_bot(
         autonomy_mode=autonomy_mode,
         devin_api_key=devin_api_key,
         role_permissions=role_permissions,
+        context_provider=context_provider,
         llm_router=llm_router,
     )
     await bot.start(token)

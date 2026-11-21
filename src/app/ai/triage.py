@@ -22,16 +22,27 @@ Classify this Discord message into strict JSON:
 - "status" = asking whether systems are healthy.
 - "incident" = reporting a concrete problem.
 - "other" = anything unrelated; summary may be empty.
-Message: {message}"""
+Message: {message}
+
+{infra_context}"""
 
 
-async def classify_message(router: LLMRouter | None, message: str, timeout: float = 20.0) -> dict | None:
+async def classify_message(
+    router: LLMRouter | None,
+    message: str,
+    timeout: float = 20.0,
+    infra_context: str = "",
+) -> dict | None:
     """Return the parsed classification dict, or None if the LLM is unavailable."""
     if router is None or not message.strip():
         return None
     try:
         raw = await router.generate(
-            _PROMPT.format(services=_SERVICES, message=message.strip()),
+            _PROMPT.format(
+                services=_SERVICES,
+                message=message.strip(),
+                infra_context=infra_context[:24_000],
+            ),
             timeout_seconds=timeout,
         )
         text = raw.strip()

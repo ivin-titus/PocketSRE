@@ -162,7 +162,7 @@ The project creates folders only for features it implements. Discord and direct 
 
 ### Current foundation
 
-The initial codebase now provides a FastAPI health endpoint, incident and action contracts, an allow-listed Yuki diagnostic/restart runbook planner, lead-only restart approval, in-memory audit records, signed 15-minute console links, a Vite + vanilla CSS console shell, and tests. Its AI boundary adapts Yuki's vendor-interface, health-aware key selection, rate-limit cooldown, and retry/backpressure patterns. The Discord runtime adapts Yuki's lifecycle and handler separation with `/status` and `/triage` commands. It does **not** execute SSH commands yet; execution will be introduced only after target-host credentials and post-run verification are configured.
+The codebase now provides a FastAPI health endpoint, incident and action contracts, an allow-listed Yuki diagnostic/restart runbook executor over Paramiko SSH (pre-flight integrity check + post-run verification), configurable RBAC (`ROLE_PERMISSIONS`), NeonDB write-through persistence (incidents/audit/budget/knowledge), signed 15-minute console links, a dependency-free static console + mission-control page (SSE feed), a Discord bot with proactive alert cards and reactive free-text triage via Gemini/OpenAI, Devin dispatch for code regressions, and tests. Confidential infra topology never lives in this repo: upload it via `POST /api/knowledge/upload` (admin-secret gated) → `infra_knowledge_docs` in NeonDB; `docs/infra/` holds only sanitized, public-safe docs.
 
 ---
 
@@ -244,7 +244,7 @@ POCKETSRE_SARVAM_API_KEY=""        # Phase 2 — metered credits (500)
 POCKETSRE_SMALLEST_AI_API_KEY=""   # Phase 2 — metered credits ($60)
 
 # Infrastructure & Console
-POCKETSRE_TARGET_SSH_HOST="161.118.252.7"
+POCKETSRE_TARGET_SSH_HOST="<YUKI_VM_IP>"
 POCKETSRE_TARGET_SSH_USER="pocketsre"
 POCKETSRE_TARGET_SSH_KEY_PATH="/app/.ssh/pocketsre_bot_ed25519"
 POCKETSRE_MAGIC_LINK_SECRET="your_cryptographic_signing_secret"

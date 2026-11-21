@@ -245,12 +245,12 @@ This section is the canonical source of truth for PocketSRE's remote execution s
 ### 8.1 Connection Details (Verified Working)
 
 ```bash
-# Target host: 161.118.252.7 (yukihira — OCI VM)
+# Target host: <POCKETSRE_TARGET_SSH_HOST> (yukihira — OCI VM; set in .env)
 # Auth: Ed25519 key pair, unprivileged user `pocketsre`
-ssh -i ~/.ssh/pocketsre_bot_ed25519 pocketsre@161.118.252.7 'sudo /usr/bin/docker logs --tail 10 yuki-telegram-bot'
+ssh -i ~/.ssh/<pocketsre_bot_ed25519> pocketsre@<POCKETSRE_TARGET_SSH_HOST> 'sudo /usr/bin/docker logs --tail 10 yuki-telegram-bot'
 ```
 
-* Private key path on PocketSRE VM / in container: `/app/.ssh/pocketsre_bot_ed25519` (chmod 600)
+* Private key path on PocketSRE VM / in container: `/app/.ssh/<pocketsre_bot_ed25519>` (chmod 600, `POCKETSRE_TARGET_SSH_KEY_PATH`)
 * `pocketsre` user on Yuki VM: passwordless-login disabled; sudo limited to the whitelist below
 * Shell pipelines work around sudo: `sudo docker logs <c> | grep -i error` — grep runs unprivileged in the remote shell, so log filtering needs no sudoers expansion
 * Paramiko client must set `AutoAddPolicy` for missing host keys (FAIL-3.4)

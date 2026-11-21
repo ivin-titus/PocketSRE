@@ -1,5 +1,5 @@
 # /etc/sudoers.d/pocketsre — canonical whitelist for PocketSRE remote execution on the Yuki VM.
-# Verified live on 161.118.252.7 (yukihira), sudo 1.9+ compatible: trailing wildcards only,
+# Verified live on <YUKI_VM_IP> (yukihira), sudo 1.9+ compatible: trailing wildcards only,
 # absolute paths, no deprecated directives. Validate after edits: sudo visudo -cf <file>.
 # Keep in sync with the tool registry in src/app/actions/ — see docs/infra/yuki_architecture.md §8.
 

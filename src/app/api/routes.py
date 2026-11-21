@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from hmac import compare_digest
+from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -40,8 +41,45 @@ def get_incident(incident_id: UUID, service: IncidentService = Depends(incidents
 
 
 @router.get("/api/infra/context")
-def get_infra_context() -> dict[str, str]:
-    return {"context": load_infra_context()}
+def get_infra_context(request: Request) -> dict[str, str]:
+    return {"context": load_infra_context(db=request.app.state.db)}
+
+
+@router.post("/api/knowledge/upload")
+async def upload_knowledge_doc(request: Request) -> dict:
+    """Upload an infra doc into `infra_knowledge_docs`. Operator-only: the
+    `x-admin-secret` header must match the magic-link secret."""
+    settings = get_settings()
+    secret = request.headers.get("x-admin-secret", "")
+    if not settings.magic_link_secret or not compare_digest(secret, settings.magic_link_secret):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid admin secret")
+    db = request.app.state.db
+    if db is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="NeonDB not configured")
+    form = await request.form()
+    file = form.get("file")
+    if file is None or not getattr(file, "filename", ""):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="file field required")
+    name = Path(file.filename).name
+    if Path(name).suffix.lower() not in (".md", ".txt"):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Only .md/.txt docs accepted")
+    content = (await file.read()).decode("utf-8", errors="replace")
+    if len(content) > 256_000:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Doc too large (256KB max)")
+    db.upsert_knowledge_doc(name, content)
+    return {"doc_name": name, "bytes": len(content)}
+
+
+@router.get("/api/knowledge")
+def list_knowledge_docs(request: Request) -> dict:
+    secret = request.headers.get("x-admin-secret", "")
+    settings = get_settings()
+    if not settings.magic_link_secret or not compare_digest(secret, settings.magic_link_secret):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid admin secret")
+    db = request.app.state.db
+    if db is None:
+        return {"docs": []}
+    return {"docs": [{"doc_name": d["doc_name"], "uploaded_at": d["uploaded_at"]} for d in db.list_knowledge_docs()]}
 
 
 
