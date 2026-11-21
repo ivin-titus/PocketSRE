@@ -199,3 +199,50 @@ def test_run_wraps_connect_failures(tmp_path) -> None:
                 pass
             else:
                 raise AssertionError("connect failure must raise SshExecutionError")
+
+
+class TestHostTools:
+    def _svc(self) -> ActionService:
+        return ActionService(
+            AuditLog(), executor=FakeExecutor(CommandOutcome("c", 0, "ok", ""))
+        )
+
+    def test_host_tools_dispatch(self) -> None:
+        svc = self._svc()
+        executor = svc.executor
+        for action, svc_name, expected in (
+            (RunbookAction.DOCKER_PS, "host", "sudo /usr/bin/docker ps -a"),
+            (RunbookAction.DOCKER_STATS, "host", "sudo /usr/bin/docker stats --no-stream"),
+            (RunbookAction.NGINX_STATUS, "host", "sudo /usr/bin/systemctl status nginx"),
+            (RunbookAction.NGINX_TEST, "host", "sudo /usr/bin/nginx -t"),
+            (RunbookAction.DOCKER_DAEMON_STATUS, "host", "sudo /usr/bin/systemctl status docker"),
+            (RunbookAction.SERVICE_JOURNAL, "nginx", "sudo /usr/bin/journalctl -u nginx -n 200 --no-pager"),
+        ):
+            req = ActionRequest(
+                incident_id=uuid4(), action=action, service=svc_name,
+                actor_id="r1", actor_role=ActorRole.RESPONDER, approved=True,
+            )
+            svc.execute(req)
+        assert executor.ran[-1] == "sudo /usr/bin/journalctl -u nginx -n 200 --no-pager"
+
+    def test_mutating_host_tools_need_lead(self) -> None:
+        import pytest
+
+        svc = self._svc()
+        req = ActionRequest(
+            incident_id=uuid4(), action=RunbookAction.DISK_PRUNE, service="host",
+            actor_id="v1", actor_role=ActorRole.VIEWER, approved=True,
+        )
+        with pytest.raises(PermissionError):
+            svc.execute(req)
+
+    def test_journal_unit_whitelist(self) -> None:
+        import pytest
+
+        svc = self._svc()
+        req = ActionRequest(
+            incident_id=uuid4(), action=RunbookAction.SERVICE_JOURNAL, service="postgres",
+            actor_id="r1", actor_role=ActorRole.RESPONDER, approved=True,
+        )
+        with pytest.raises(Exception):
+            svc.execute(req)

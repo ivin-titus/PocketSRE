@@ -70,11 +70,45 @@ RUNBOOKS: dict[RunbookAction, dict[str, str]] = {
         container: f"sudo /usr/bin/docker inspect {container}"
         for container in AVAILABLE_CONTAINERS
     },
+    RunbookAction.DOCKER_TOP: {
+        container: f"sudo /usr/bin/docker top {container}"
+        for container in AVAILABLE_CONTAINERS
+    },
+    # Host-level tools keyed to a single pseudo-service so command_for() stays uniform.
+    RunbookAction.DOCKER_PS: {"host": "sudo /usr/bin/docker ps -a"},
+    RunbookAction.DOCKER_STATS: {"host": "sudo /usr/bin/docker stats --no-stream"},
+    RunbookAction.DISK_PRUNE: {"host": "sudo /usr/bin/docker system prune -f"},
+    RunbookAction.NGINX_RESTART: {"host": "sudo /usr/bin/systemctl restart nginx"},
+    RunbookAction.NGINX_STATUS: {"host": "sudo /usr/bin/systemctl status nginx"},
+    RunbookAction.NGINX_TEST: {"host": "sudo /usr/bin/nginx -t"},
+    RunbookAction.DOCKER_DAEMON_STATUS: {"host": "sudo /usr/bin/systemctl status docker"},
+    RunbookAction.SERVICE_JOURNAL: {
+        "nginx": "sudo /usr/bin/journalctl -u nginx -n 200 --no-pager",
+        "docker": "sudo /usr/bin/journalctl -u docker -n 200 --no-pager",
+    },
 }
+
+SERVICE_JOURNAL_UNITS: tuple[str, ...] = ("nginx", "docker")
 
 
 def command_for(action: RunbookAction, service: str, params: ActionParams | None = None) -> str:
     """Return a declared command built from validated params only."""
+    if action is RunbookAction.SERVICE_JOURNAL:
+        if service not in SERVICE_JOURNAL_UNITS:
+            raise ValueError(
+                f"journal unit must be one of {SERVICE_JOURNAL_UNITS} (got '{service}')"
+            )
+        return RUNBOOKS[action][service]
+    if action in {
+        RunbookAction.DOCKER_PS,
+        RunbookAction.DOCKER_STATS,
+        RunbookAction.DISK_PRUNE,
+        RunbookAction.NGINX_RESTART,
+        RunbookAction.NGINX_STATUS,
+        RunbookAction.NGINX_TEST,
+        RunbookAction.DOCKER_DAEMON_STATUS,
+    }:
+        return RUNBOOKS[action]["host"]
     container = resolve_container_name(service)
     try:
         command = RUNBOOKS[action][container]

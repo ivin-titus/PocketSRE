@@ -49,6 +49,60 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
             description="Start a whitelisted Yuki container. Requires lead approval.",
             mutating=True,
         ),
+        ToolSpec(
+            name="docker_top",
+            action=RunbookAction.DOCKER_TOP,
+            description="List processes running inside a whitelisted container.",
+            mutating=False,
+        ),
+        ToolSpec(
+            name="docker_ps",
+            action=RunbookAction.DOCKER_PS,
+            description="List all containers and their status on the host.",
+            mutating=False,
+        ),
+        ToolSpec(
+            name="docker_stats",
+            action=RunbookAction.DOCKER_STATS,
+            description="One-shot CPU/mem/net I/O snapshot for all containers.",
+            mutating=False,
+        ),
+        ToolSpec(
+            name="disk_prune",
+            action=RunbookAction.DISK_PRUNE,
+            description="Prune dangling images/containers/volumes (docker system prune -f). Requires lead approval.",
+            mutating=True,
+        ),
+        ToolSpec(
+            name="nginx_restart",
+            action=RunbookAction.NGINX_RESTART,
+            description="Restart the host nginx ingress. Requires lead approval.",
+            mutating=True,
+        ),
+        ToolSpec(
+            name="nginx_status",
+            action=RunbookAction.NGINX_STATUS,
+            description="systemctl status nginx on the host.",
+            mutating=False,
+        ),
+        ToolSpec(
+            name="nginx_test",
+            action=RunbookAction.NGINX_TEST,
+            description="Validate nginx config (nginx -t) before any restart.",
+            mutating=False,
+        ),
+        ToolSpec(
+            name="service_journal",
+            action=RunbookAction.SERVICE_JOURNAL,
+            description="Last 200 systemd journal lines for the nginx or docker unit (service=nginx|docker).",
+            mutating=False,
+        ),
+        ToolSpec(
+            name="docker_daemon_status",
+            action=RunbookAction.DOCKER_DAEMON_STATUS,
+            description="systemctl status docker — daemon health on the host.",
+            mutating=False,
+        ),
     )
 }
 

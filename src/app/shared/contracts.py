@@ -25,6 +25,15 @@ class RunbookAction(str, Enum):
     STOP_SERVICE = "stop_service"
     START_SERVICE = "start_service"
     INSPECT_SERVICE = "inspect_service"
+    DOCKER_PS = "docker_ps"
+    DOCKER_STATS = "docker_stats"
+    DOCKER_TOP = "docker_top"
+    DISK_PRUNE = "disk_prune"
+    NGINX_RESTART = "nginx_restart"
+    NGINX_STATUS = "nginx_status"
+    NGINX_TEST = "nginx_test"
+    SERVICE_JOURNAL = "service_journal"  # journalctl -u nginx|docker
+    DOCKER_DAEMON_STATUS = "docker_daemon_status"
 
 
 class ActorRole(str, Enum):

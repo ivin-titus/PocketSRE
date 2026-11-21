@@ -11,7 +11,7 @@
 | Presence poller (all deterministic triggers, dedup, auto-resolve) | ✅ Done | `incidents/poller.py`, tested |
 | Discord webhook alert ingestion | ✅ Done | Parses alerts, creates incident, emits `opened` on the alert bridge |
 | Service→container name resolution | ✅ Done | `actions/runbooks.py` aliases→pinned containers |
-| Typed runbook whitelist (logs/restart/stop/start/inspect) | ✅ Done | Enum-mapped, validated params (`tail_lines` 1–500, safe-charset grep) |
+| Typed runbook whitelist | ✅ Done | Enum-mapped, validated params; covers every sudoers entry — logs/inspect/top per container, restart/stop/start, `docker ps -a`, `docker stats --no-stream`, `docker system prune -f`, nginx restart/status/`nginx -t`, `journalctl -u nginx|docker`, `systemctl status docker` |
 | RBAC core gate (LEAD + approval for mutations) | ✅ Done | Enforced in `execute()`; Discord roles mapped via `actor_role_for()` |
 | Magic-link token signing (HMAC, 15-min) | ✅ Done | Shared `shared/magic_link.py`; alert cards embed the console link |
 | Yuki key pool + LLM router | ✅ Done | `ai/key_pool.py`, `ai/router.py`, tested |
