@@ -2,7 +2,7 @@
 
 **Scope:** Make PocketSRE Phase 1 (Mode A: text + magic-link console + SSH runbooks) genuinely functional end-to-end — testable by the operator against the real Yuki VM.
 
-**Current state:** ~40% of Phase 1. Detection + the execution spine (SSH executor, typed tools, pre-flight, post-verify) and the proactive Discord card→approve→execute→report loop exist; persistence, reactive free-text, console UI, budget governor, and LLM wiring remain absent.
+**Current state:** ~50% of Phase 1. Detection + execution spine + proactive *and* reactive Discord loops (live `/status`, `/approve`, mention triage, Devin dispatch) exist; persistence, console UI, budget governor, and LLM wiring remain absent.
 
 ## 0. Where we are vs what's pending
 
@@ -22,11 +22,11 @@
 | **SSH execution (Paramiko)** | ✅ Done | `actions/ssh_executor.py` — timeouts, exit-code capture, `POST /api/actions/execute` |
 | **Tool-call registry** | ✅ Done | `actions/tools.py` — name/description/mutating per tool; LLM-ready schemas |
 | **Autonomy mode enforcement** | ⚠️ Partial | `FULL_AUTONOMY` auto-runs + announces; `READ_AUTO` free-run vs `STRICT_CONFIRMATION` ask-gate not yet differentiated |
-| **Proactive flow** | ⚠️ Partial | Card→buttons→execute→report→resolution embeds live (`bot/discord_runtime.py`); Devin dispatch card + `/approve` pending |
-| **Reactive flow** (`/status` live, free-text triage) | ❌ Pending | `/status` is a static string |
+| **Proactive flow** | ✅ Done | Card→buttons→execute→report→resolution loop live incl. Devin dispatch button + mode badge |
+| **Reactive flow** (`/status` live, free-text triage) | ⚠️ Partial | `/status` shows live presence per route + open incidents; mention/`pocketsre` messages triage via keyword heuristics (Gemini free-text parsing still pending) |
 | **Discord RBAC + DM guards** | ⚠️ Partial | Role-name→`ActorRole` mapping in buttons; no `guild_only`/`ROLE_PERMISSIONS` config yet |
-| **Approval surfaces** (buttons, `/approve`, magic-link) | ⚠️ Partial | Buttons done; `/approve` + console-side approve pending |
-| **Devin dispatch** (code-regression path) | ❌ Pending | No provider code, stub, or Linear/GitHub linking |
+| **Approval surfaces** (buttons, `/approve`, magic-link) | ⚠️ Partial | Buttons + `/approve` slash + `@PocketSRE approve` text path done; console-side approve pending |
+| **Devin dispatch** (code-regression path) | ⚠️ Partial | `swe/dispatch.py` posts to `/v1/sessions` with stub fallback; button on cards (lead-gated); Linear/GitHub linking pending |
 | **NeonDB persistence** | ❌ Pending | `storage/` empty; no driver in deps |
 | **Budget governor** ($5 cap, per-provider ledger) | ❌ Pending | Nothing |
 | **Loop guard / escalation dossier** | ❌ Pending | Nothing |
@@ -36,7 +36,7 @@
 | **GeminiClient wiring** | ❌ Pending | Protocol exists; real client ports from Yuki |
 | `scripts/inject_mock_incident.sh` | ❌ Pending | Referenced in README; doesn't exist |
 
-**Phase readiness:** Phase 1 ≈ 40% · Phase 2 (voice notes/code-mixing) = 0% · Phase 3 (live voice) = 0%
+**Phase readiness:** Phase 1 ≈ 50% · Phase 2 (voice notes/code-mixing) = 0% · Phase 3 (live voice) = 0%
 
 **Verified environment facts:**
 - SSH to target VM works: `ssh -i ~/.ssh/pocketsre_bot_ed25519 pocketsre@161.118.252.7 'sudo /usr/bin/docker logs --tail 10 yuki-telegram-bot'`
@@ -109,12 +109,12 @@ detect → investigate → run fixing runbook (e.g. restart) → transparent rep
 
 ### Track B — Discord conversation flows
 - **B1. RBAC guards** — `@app_commands.guild_only()` on all commands, `getattr(interaction.user, "roles", [])`, `ROLE_PERMISSIONS` mapping (`SRE-Lead` → all, `DevOps` → mutations minus Devin dispatch, `Junior-Dev` → read-only).
-- **B2. ⚠️ Alert card** — embed with summary + buttons (Fetch logs / Inspect / Approve & Restart / Deny) + console link. Autonomy-mode badge pending.
-- **B3. ⚠️ Approval handler** — button callbacks → `ActionService.execute()` done; `/approve <incident_id>` + text path pending.
-- **B4. Reactive commands** — `/status` (presence snapshot + spend), `/triage`, free-text mention triage via Gemini (lightweight prompt → classification + suggested tool).
+- **B2. ✅ Alert card** — embed with summary + buttons (Fetch logs / Inspect / Approve & Restart / Dispatch Devin / Deny) + console link + autonomy-mode badge.
+- **B3. ✅ Approval handler** — button callbacks + `/approve <incident_id>` + `@PocketSRE approve` text path → `ActionService.execute()`.
+- **B4. ⚠️ Reactive commands** — `/status` live presence + open incidents (spend gauge pending Track D); `/triage` done; free-text mention triage uses keyword heuristics until GeminiClient lands.
 - **B5. ✅ Result report** — `report_embed` posts status + truncated output; `resolution_embed` posts recovery summary.
-- **B6. Devin dispatch card** — code-regression path: permission card → `POST /v3/sessions` → session URL + eventual PR link posted back. Deterministic stub fallback when `DEVIN_API_KEY` unset.
-- **B7. Line-1 deferral** — `await interaction.response.defer()` first line of every handler (FAIL-1.1).
+- **B6. ⚠️ Devin dispatch card** — lead-gated `Dispatch Devin fix` button → `POST /v1/sessions` → session URL posted; stub fallback when `DEVIN_API_KEY` unset. PR link-back + Linear pending.
+- **B7. ✅ Line-1 deferral** — `defer()` first in every handler (FAIL-1.1).
 
 ### Track C — Persistence (NeonDB)
 - **C1. `storage/db.py`** — asyncpg (or psycopg) pool, `SELECT 1` keepalive every 4 min.
