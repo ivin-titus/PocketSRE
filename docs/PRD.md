@@ -76,8 +76,8 @@ PocketSRE provides complete linguistic freedom across all interaction modes. Pur
 * **Pure Malayalam In $\rightarrow$ Pure Malayalam Out:** Fluent native Malayalam incident alerts and diagnostics synthesized via `bulbul:v3` (`target_language_code="ml-IN"`, speaker: `priya` or `shubh`).
 * **Pure Hindi In $\rightarrow$ Pure Hindi Out:** Formal, boardroom-ready Hindi incident reports synthesized via `bulbul:v4-flash` or `bulbul:v3` (`hi-IN`).
 * **Adaptive Code-Mixing Feature (Manglish & Hinglish):** When engineers naturally mix technical terms with regional speech, PocketSRE mirrors their style seamlessly:
-  * *Manglish:* *"Kiwi, Yuki chat container down aayi, onnu check cheyth restart cheyyuo?"* $\rightarrow$ *"Pinne entha senpai! Njan ippothanne yuki-core logs check cheythu restart cheyyaam. Emergency console-il link ayachittund!"*
-  * *Hinglish:* *"Vikram, Yuki ka container crash ho gaya hai, ek baar check karke restart maar de"* $\rightarrow$ *"Ji sir, yuki-core ke logs inspect karke restart trigger kar raha hoon. Console link bhej diya hai!"*
+  * *Manglish:* *"Kiwi, Yuki chat container down aayi, onnu check cheyth restart cheyyuo?"* $\rightarrow$ *"Pinne entha senpai! Njan ippothanne yuki-core-api logs check cheythu restart cheyyaam. Emergency console-il link ayachittund!"*
+  * *Hinglish:* *"Vikram, Yuki ka container crash ho gaya hai, ek baar check karke restart maar de"* $\rightarrow$ *"Ji sir, yuki-core-api ke logs inspect karke restart trigger kar raha hoon. Console link bhej diya hai!"*
 * **Zero-Cost Fallback:** If Sarvam credits deplete, routes seamlessly to Microsoft `edge-tts` (`en-IN-NeerjaNeural` for English, `ml-IN-SobhanaNeural` for Malayalam, `hi-IN-SwaraNeural` for Hindi).
 
 ---
@@ -91,7 +91,7 @@ PocketSRE decouples the core platform intelligence from the visual and conversat
 | **Persona Role** | Empathetic on-call companion. | Formal enterprise SRE lead. |
 | **Tone & Style** | Warm, encouraging, empathetic, slightly playful (*"Daijoubu Senpai! Kiwi is on it!"*). Relieves high-stakes 2 AM on-call panic. | Objective, concise, boardroom-ready, formal technical Markdown. Zero fluff. |
 | **Voice Synthesis** | Cute, natural companion prosody (`ja-JP-NanamiNeural` or friendly Sarvam `priya`). | Deep, professional executive narration (Sarvam `shubh` or `en-IN-PrabhatNeural`). |
-| **Voice / Alert Framing Examples** | *Pure English:* *"Senpai! Yuki container crashed, but I grabbed the logs. Should I restart it?"*<br>*Manglish:* *"Senpai! Yuki container down aayi, pakshe njan logs eduthittund. Onnu restart cheyyatte?"* | *Pure English:* *"Incident 501: Container `yuki-core` terminated by kernel OOM. Uptime degraded. Recommending immediate restart."*<br>*Manglish:* *"Incident 501: `yuki-core` container crash aayi. Uptime degrade aayi. Immediate restart recommend cheyyunnu."* |
+| **Voice / Alert Framing Examples** | *Pure English:* *"Senpai! Yuki container crashed, but I grabbed the logs. Should I restart it?"*<br>*Manglish:* *"Senpai! Yuki container down aayi, pakshe njan logs eduthittund. Onnu restart cheyyatte?"* | *Pure English:* *"Incident 501: Container `yuki-core-api` terminated by kernel OOM. Uptime degraded. Recommending immediate restart."*<br>*Manglish:* *"Incident 501: `yuki-core-api` container crash aayi. Uptime degrade aayi. Immediate restart recommend cheyyunnu."* |
 | **Target Audience** | Solo founders, night-shift on-call devs, community servers. | Enterprise stakeholders, executive war rooms, incident retro reviews. |
 
 ---
@@ -99,13 +99,14 @@ PocketSRE decouples the core platform intelligence from the visual and conversat
 ## 3. System Architecture & Tech Stack
 
 ```
-                              ┌────────────────────────────────────────┐
-                              │           INCIDENT INGESTION           │
-                              │   • Sentry Webhooks (/webhook/sentry)  │
-                              │   • Yuki Health Poller (/presence)     │
-                              │   • Generic JSON (/webhook/generic)    │
-                              └───────────────────┬────────────────────┘
-                                                  │
+                               ┌────────────────────────────────────────────────────────┐
+                               │                   INCIDENT INGESTION                   │
+                               │   • Discord Webhook Monitor (Infra Alerts in 2 min)    │
+                               │   • Yuki Presence Poller (/presence/{central,etc})     │
+                               │   • Infra Docs Knowledge Base (docs/infra/*.md)        │
+                               │   • [Future: Sentry Webhooks & Generic JSON Ingest]    │
+                               └───────────────────────────┬────────────────────────────┘
+                                                   │
                                                   ▼
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
 │                    OCI VM 1: POCKETSRE CONTROL PLANE (Out-of-Band VM)                       │
@@ -137,7 +138,8 @@ PocketSRE decouples the core platform intelligence from the visual and conversat
 │  • Unprivileged System User: `pocketsre` (/etc/sudoers.d/pocketsre whitelisted commands)    │
 │  • Target Containers: `yuki-core-api`, `yuki-horiz-client`, `yuki-discord-bot`, `yuki-telegram-bot`, `yuki-redis` │
 │  • Host Services: PostgreSQL (UNIX Domain Socket), NGINX Reverse Proxy, Docker Engine       │
-│  • Health Endpoint: https://yuki-net.ivin.site/presence/central (Polled by Kiwi over HTTP)  │
+│  • Health Endpoints: https://yuki-net.ivin.site/presence/{central,discord,horiz,telegram}   │
+│  • Infra Alert Webhook: Discord Webhook (emits alerts within 2m of infra events)             │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
                                                 │
                      ┌──────────────────────────┴──────────────────────────┐
@@ -183,13 +185,13 @@ PocketSRE strictly decouples sensitive credentials from declarative policies and
     SWE_AGENT_PROVIDER = "devin"  # Options: "devin" (Cognition AI - Demo Primary), "local_opencode" (Local Harness), "generic_webhook"
     LOCAL_SWE_ENDPOINT = "http://localhost:8080/v1/remediate"
     ```
-  * **Infrastructure Targets:** Pinned container names (`CONTAINER_TARGET = "yuki-core"`), SSH ports, and remote log paths.
+  * **Infrastructure Targets:** Pinned container names (`CONTAINER_TARGET = "yuki-core-api"`), SSH ports, and remote log paths.
   * **RBAC Role Mapping:** Maps Discord roles to permissible actions:
     ```python
     ROLE_PERMISSIONS = {
         "SRE-Lead": ["*"],
-        "DevOps": ["RESTART_YUKI_CORE", "RESTART_HORIZ_CONNECTOR", "FETCH_LOGS_YUKI", "FETCH_LOGS_HORIZ", "PRUNE_DISK"],
-        "Junior-Dev": ["FETCH_LOGS_YUKI", "FETCH_LOGS_HORIZ", "STATUS", "CHAT"]
+        "DevOps": ["RESTART_YUKI_CORE", "RESTART_HORIZ_CLIENT", "FETCH_LOGS_CORE_API", "FETCH_LOGS_HORIZ_CLIENT", "PRUNE_DISK"],
+        "Junior-Dev": ["FETCH_LOGS_CORE_API", "FETCH_LOGS_HORIZ_CLIENT", "STATUS", "CHAT"]
     }
     AUTONOMY_POLICY_MODE = "DESTRUCTIVE_ONLY"  # Options: DESTRUCTIVE_ONLY, UNKNOWN_ONLY, STRICT_CONFIRMATION
     EXECUTION_PRIVILEGE_MODE = "NON_ROOT"      # Options: NON_ROOT (Default / Recommended), FULL_ROOT (NOT RECOMMENDED / HIGH RISK)
@@ -200,10 +202,52 @@ PocketSRE strictly decouples sensitive credentials from declarative policies and
 
 ## 4. Mandatory Features (Core MVP Scope)
 
-### 4.1 Multi-Source Incident Ingestion
-* **Sentry Webhook (`POST /webhook/sentry`):** Extracts `culprit`, `exception_value`, `user_count`, and stack trace frames.
-* **Yuki Presence Health Poller:** Polls `https://yuki-net.ivin.site/presence/central` every 10 seconds. Flags incidents when `status != "online"` or `gate_mode != "ACCEPTING"`.
-* **Generic JSON Webhook (`POST /webhook/generic`):** Ingests standardized telemetry from external monitors.
+### 4.1 Multi-Source Incident Detection & Ingestion
+
+PocketSRE employs a dual-channel detection topology combining proactive application-level polling with reactive host-level alerting:
+
+1. **Reactive Host/Infra Alerting (Discord Webhook Monitor):**
+   * **Inbound Alert Webhook:** `https://discord.com/api/webhooks/1516923595903864963/03DE8KxXouAORIWNIxe6zHtGuVEGka6HV4nVpwKebVLJNuFBRFOzZaLD8VHwARO_JLk0`
+   * **Mechanism:** Inside the target VM, low-level watchdog daemons emit critical infrastructure status alerts (within ~2 minutes of an incident or system event) directly to this Discord Webhook.
+   * **PocketSRE Ingestion:** PocketSRE's `discord.py` bot monitors the receiving text channel directly via an `on_message` listener, parsing alert payloads instantly to trigger sub-second reactive incident triage without polling latency.
+
+2. **Proactive Application & Subsystem Telemetry (Presence Poller):**
+   * **Endpoints:** Polls all 4 Yuki presence endpoints every 15–30 seconds via `httpx`:
+     - `https://yuki-net.ivin.site/presence/central` (`service: "core-chat-api"` -> container `yuki-core-api`)
+     - `https://yuki-net.ivin.site/presence/discord` (`service: "yuki-discord-bot"`)
+     - `https://yuki-net.ivin.site/presence/horiz` (`service: "yuki-horiz-client"`)
+     - `https://yuki-net.ivin.site/presence/telegram` (`service: "yuki-telegram-bot"`)
+   * **Presence Payloads:**
+     ```json
+     // /presence/central
+     {"uptime_seconds":168736,"gate_mode":"ACCEPTING","db_status":"ok","redis_status":"ok","flags":{"deploy_ready":true,"restart_recommended":false,"maintenance_mode":false},"status":"online","service":"core-chat-api","app_version":"6.4.2","commit_sha":"d21460dd5a9c560a2993423f7246051a0e5ec7ac","degraded_subsystems":[]}
+
+     // /presence/discord, /horiz, /telegram
+     {"status": "online", "service": "yuki-discord-bot", "uptime_seconds": 168775, "platform_connection_state": "connected", "flags": {"deploy_ready": true, "restart_recommended": false, "maintenance_mode": false}, "app_version": "2.3.2", "commit_sha": "ad0fa5f012ded1c94a4e0ca0f605f26715224de2", "degraded_subsystems": []}
+     ```
+   * **Deterministic Incident Trigger Rules:**
+     - HTTP status != 200 or connection timeout (> 5.0s)
+     - `status != "online"` (e.g. `"offline"`, `"degraded"`)
+     - `db_status != "ok"` or `redis_status != "ok"`
+     - `flags.restart_recommended == true` or `flags.maintenance_mode == true`
+     - `degraded_subsystems` list is non-empty (`len > 0`)
+     - `platform_connection_state != "connected"` (for gateway bots)
+
+3. **1:1 Service-to-Container Name Resolution:**
+   * The `service` name exposed in presence payloads and alert summaries maps directly to Docker container names on the target VM:
+     - `core-chat-api` / `yuki-core` -> `yuki-core-api`
+     - `yuki-horiz-client` / `horiz-connector` -> `yuki-horiz-client`
+     - `yuki-discord-bot` -> `yuki-discord-bot`
+     - `yuki-telegram-bot` -> `yuki-telegram-bot`
+     - `yuki-redis` -> `yuki-redis`
+   * This gives the triage engine immediate precision: it knows exactly which container requires `docker logs`, `docker inspect`, or `docker restart`.
+
+4. **Investigation Scope (Hackathon MVP vs. Future Extensibility):**
+   * **Hackathon MVP:** Investigation (both proactive and reactive) checks these 4 presence endpoints + executes bounded SSH commands via Paramiko.
+   * **Future Extensibility:** Production roadmap includes broader integrations: Sentry webhooks (`POST /webhook/sentry`), Generic JSON (`POST /webhook/generic`), Tailscale mesh telemetry, and Terraform drift checks.
+
+5. **Infra Knowledge Base Ingestion (`docs/infra/`):**
+   * PocketSRE loads markdown documentation from `docs/infra/` (e.g. `yuki_architecture.md`) directly into LLM prompts on demand, providing instant ground truth on internal ports, PostgreSQL UNIX sockets, and Redis brokers without requiring an external vector DB.
 
 ### 4.2 Sub-40ms Reflex Triage & Blast Radius Evaluation
 * **Reflex Decision Triage:** Fast classification into `CODE_REGRESSION`, `RESOURCE_STARVATION`, `INFRA_OFFLINE`, or `TRANSIENT_BLIP`.
@@ -383,7 +427,7 @@ PocketSRE delivers full linguistic flexibility across voice notes and live calls
 * **Pure Malayalam In $\rightarrow$ Pure Malayalam Out:** Fluent native Malayalam incident alerts and answers synthesized via `bulbul:v3` (`target_language_code="ml-IN"`, speaker: `priya` or `shubh`).
 * **Pure Hindi In $\rightarrow$ Pure Hindi Out:** Formal, boardroom-ready Hindi incident reports synthesized via `bulbul:v4-flash` or `bulbul:v3` (`hi-IN`).
 * **Adaptive Code-Mixing Feature (Manglish & Hinglish):** Responders are never forced into either pure literary Malayalam or pure English. When engineers naturally blend technical English terms into local sentence structure, Sarvam Saaras STT (`saaras:v4`) accurately parses the command and mirrors the dialect:
-  * *Avatar A (Kiwi - Companion SRE):* *"Pinne entha senpai! Njan ippothanne yuki-core logs check cheythu restart cheyyaam. Emergency console-il link ayachittund!"* (Empathetic prosody, warm, calming 2 AM crisis companion).
+  * *Avatar A (Kiwi - Companion SRE):* *"Pinne entha senpai! Njan ippothanne yuki-core-api logs check cheythu restart cheyyaam. Emergency console-il link ayachittund!"* (Empathetic prosody, warm, calming 2 AM crisis companion).
   * *Avatar B (Vikram - Corporate SRE Lead):* *"Yuki core logs inspect cheythu. DB socket connection failure aanu root cause. Emergency console link generate cheythittund, review cheythu approve cheyyuka."* (Authoritative, calm, objective, boardroom-ready).
 * **Zero-Cost Fallback:** If Sarvam credits deplete, routes seamlessly to Microsoft `edge-tts` (`en-IN-NeerjaNeural` for English, `ml-IN-SobhanaNeural` for Malayalam, `hi-IN-SwaraNeural` for Hindi).
 
@@ -406,12 +450,12 @@ To eliminate any risk of demonstration failure during the hackathon:
 
 ### 4.11 Adaptive Incident Memory & Self-Learning Playbooks (Experience Engine)
 PocketSRE eliminates the operational overhead of hardcoding static runbook rules for every microservice quirk by observing and learning from human SRE actions:
-* **Pattern Capture on Lead Resolution:** When an authorized lead (`@SRE-Lead`) executes or approves a remediation action (e.g., approving `docker restart horiz-connector` or container restart after an alert showing `platform_not_connected` on Project Yuki's Hori-Z connector), PocketSRE monitors the service and verifies that health recovers (`200 OK` on `/presence/central`).
+* **Pattern Capture on Lead Resolution:** When an authorized lead (`@SRE-Lead`) executes or approves a remediation action (e.g., approving `docker restart yuki-horiz-client` or container restart after an alert showing `platform_not_connected` on Project Yuki's Hori-Z connector), PocketSRE monitors the service and verifies that health recovers (`200 OK` on `/presence/central`).
 * **Fingerprinting & Persistent Storage:** Upon confirmed recovery, PocketSRE normalizes and hashes the error signature (service name + error code + key message tokens) and persists the pattern in NeonDB's `learned_playbooks` table:
   * **Fields:** `pattern_hash`, `service_name`, `error_signature`, `action_taken`, `parameters`, `learned_from` (lead user ID), `confidence_score` (starts at 1, increments with repeated successful resolutions), `success_count`, `last_triggered_at`.
 * **Dual Autonomy Execution Model:**
   1. **Suggest Mode (Default / Low-to-Medium Confidence):** When a recurring incident matches a learned pattern, PocketSRE immediately surfaces the proven solution in Discord and the web console:  
-     *“I detected `platform_not_connected` on Yuki Hori-Z connector. SRE Lead @Ivin previously resolved this with a container restart (confidence: 94%, 3 successful resolutions). Would you like me to execute `docker restart horiz-connector`?”* (Surfaces 1-tap approval button; voiced in Kiwi's empathetic or Vikram's corporate tone).
+     *“I detected `platform_not_connected` on Yuki Hori-Z connector. SRE Lead @Ivin previously resolved this with a container restart (confidence: 94%, 3 successful resolutions). Would you like me to execute `docker restart yuki-horiz-client`?”* (Surfaces 1-tap approval button; voiced in Kiwi's empathetic or Vikram's corporate tone).
   2. **Full Autonomy Mode (`FULL_AUTONOMY=true` or High Confidence):** When enabled by an SRE Lead or when a learned pattern's `confidence_score >= 3` with zero regressions, PocketSRE autonomously executes the whitelisted safe runbook immediately, confirms service health recovery, and notifies the channel post-facto:  
      *“⚡ Auto-resolved `platform_not_connected` on Hori-Z connector using Learned Playbook #104 (verified 3x by Lead). Uptime restored in 420ms.”*
 * **Integrity Guardrail Precedence:** Learned playbooks **never override** hardcoded safety invariants in `config.py`. If a learned action attempts a restart while Yuki's `/presence/central` has `maintenance_mode: true` or is outside the sudoers whitelist, PocketSRE rejects execution and defers to manual human intervention.
@@ -457,7 +501,7 @@ When an escalation condition triggers (e.g. repeated failure of an approved fix,
 
 #### Break-Glass Mobile Command Dispatcher (12-Hour Feasible)
 To ensure 100% demo stability on budget mobile devices and avoid the fragile 6-hour trap of building a full `xterm.js` Web PTY terminal:
-* **Diagnostic Action Pills:** 1-tap quick buttons for PocketSRE's recommended triage checks (`[df -h]`, `[free -m]`, `[docker stats]`, `[systemctl status yuki-core]`).
+* **Diagnostic Action Pills:** 1-tap quick buttons for PocketSRE's recommended triage checks (`[df -h]`, `[free -m]`, `[docker stats]`, `[docker inspect yuki-core-api]`).
 * **Ad-Hoc Command Bar:** A single-line interactive bash prompt on the phone webview: `[ Enter bash command... ] [ Run ]`.
 * **Root Shell & Sudo Elevation Pipeline:**
   * When executing under `NON_ROOT` mode, the console provides an **Elevate to Sudo** toggle: the SRE Lead enters their sudo passphrase on the phone webview, passed via TLS to Paramiko as `sudo -S -p '' <cmd>`. Passphrases reside strictly in ephemeral memory for the 15-minute token lifetime and are never persisted to disk.
@@ -543,7 +587,7 @@ To solve the fundamental enterprise dilemma—*"How does PocketSRE understand ou
 │ • Local Repo Sync: `/docs/infra/` mount  │ • Stored in table `infra_knowledge_docs`    │
 ├──────────────────────────────────────────┴─────────────────────────────────────────────┤
 │ 3. Incident Triage Grounding (Context Injection in <15ms)                              │
-│ • Query: Service match (`yuki-core`) or keyword tags (`database`, `socket`, `nginx`)   │
+│ • Query: Service match (`yuki-core-api`) or keyword tags (`database`, `socket`, `nginx`)   │
 │ • Prompt Context: Injects exact architecture facts (host mounts, ports, runbooks)      │
 │ • Result: Eliminates hallucinated generic bash; guarantees topology-accurate triage    │
 └────────────────────────────────────────────────────────────────────────────────────────┘
@@ -560,16 +604,16 @@ To solve the fundamental enterprise dilemma—*"How does PocketSRE understand ou
 #### 4.15.2 Semantic Chunking & NeonDB Knowledge Store
 * Documents are split into semantic chunks based on markdown headings (`## Service: <name>`, `### Dependencies`, `### Known Failure Modes`).
 * Each chunk is persisted to NeonDB in `infra_knowledge_docs` with metadata:
-  * `service_name`: Target service (e.g. `yuki-core`, `horiz-connector`).
+  * `service_name`: Target service (e.g. `yuki-core-api`, `yuki-horiz-client`).
   * `doc_type`: `TOPOLOGY`, `RUNBOOK`, `SERVICE_SPEC`, or `POSTMORTEM`.
   * `content_md`: Extracted ground-truth text.
   * `tags`: Array of keywords (`socket`, `port_8000`, `postgres_socket`, `systemd`).
 * For the 12-hour hackathon, fast indexed lookup on `(service_name, tags)` or PostgreSQL full-text search (`to_tsvector`) provides sub-15ms retrieval without requiring complex embedding pipeline infrastructure.
 
 #### 4.15.3 Incident Triage Context Injection (Grounding the LLM)
-When an incident is ingested (e.g. `yuki-core` reporting socket errors), PocketSRE's reflex engine queries `infra_knowledge_docs` for relevant architecture context:
+When an incident is ingested (e.g. `yuki-core-api` reporting socket errors), PocketSRE's reflex engine queries `infra_knowledge_docs` for relevant architecture context:
 ```markdown
-[INFRASTRUCTURE GROUND TRUTH - yuki-core]
+[INFRASTRUCTURE GROUND TRUTH - yuki-core-api]
 • Service: FastAPI modular monolith container running on OCI VM.
 • Socket Mount: Connects to host PostgreSQL UNIX socket at /var/run/postgresql/.s.PGSQL.5432.
 • Port & Ingress: Internal port 8000 reverse-proxied by host NGINX (/presence/central).
@@ -655,10 +699,10 @@ class IncidentClass(str, Enum):
     TRANSIENT_BLIP = "TRANSIENT_BLIP"
 
 class RunbookAction(str, Enum):
-    RESTART_YUKI_CORE = "/usr/bin/docker restart yuki-core"
-    RESTART_HORIZ_CONNECTOR = "/usr/bin/docker restart horiz-connector"
-    FETCH_LOGS_YUKI = "/usr/bin/docker logs --tail 50 yuki-core"
-    FETCH_LOGS_HORIZ = "/usr/bin/docker logs --tail 50 horiz-connector"
+    RESTART_YUKI_CORE = "/usr/bin/docker restart yuki-core-api"
+    RESTART_HORIZ_CLIENT = "/usr/bin/docker restart yuki-horiz-client"
+    FETCH_LOGS_CORE_API = "/usr/bin/docker logs --tail 50 yuki-core-api"
+    FETCH_LOGS_HORIZ_CLIENT = "/usr/bin/docker logs --tail 50 yuki-horiz-client"
     PRUNE_DISK = "/usr/bin/docker system prune -f"
     RESTART_NGINX = "/usr/bin/systemctl restart nginx"
     DISPATCH_DEVIN = "dispatch_devin_agent"
@@ -850,13 +894,13 @@ class SweRemediationSession(BaseModel):
 ## 7. Incident Handling Workflows
 
 ### 7.1 Scenario A: Container / Process Crash (Infra in Control)
-1. **Trigger:** `yuki-core` container terminates on OCI.
+1. **Trigger:** `yuki-core-api` container terminates on OCI.
 2. **Ingest:** Presence poller detects timeout on `/presence/central`.
 3. **Triage:** Classified as `RESOURCE_STARVATION` in <40ms.
 4. **Alert:** Discord bot delivers an embed, audio clip, and `[🚨 Open Incident Console]` link button to `#yuki-alerts`.
 5. **Authorization:** SRE Lead opens the signed magic-link to tap `[⚡ Restart Yuki Core]` on the web console, or replies `@PocketSRE approve` in Discord.
 6. **Pre-flight Check:** PocketSRE checks `config.py` rules and `/presence/central` flags (ensures `maintenance_mode == false`).
-7. **Execution:** Restricted SSH runner executes `/usr/bin/docker restart yuki-core` on OCI.
+7. **Execution:** Restricted SSH runner executes `/usr/bin/docker restart yuki-core-api` on OCI.
 8. **Verification:** Poller confirms `200 OK`. Voice confirmation synthesized via active avatar (Kiwi or Vikram).
 
 ### 7.2 Scenario B: Code Deployment Bug (Application Regression)
@@ -877,17 +921,17 @@ class SweRemediationSession(BaseModel):
 
 ### 7.4 Scenario D: Learned Incident Auto-Remediation (Experience Retrieval)
 1. **Trigger:** Project Yuki's Hori-Z connector emits alert: `platform_not_connected: failed to sync presence`.
-2. **Ingest & Fingerprint:** PocketSRE computes hash `(service="horiz-connector", error="platform_not_connected")` and queries NeonDB `learned_playbooks`.
+2. **Ingest & Fingerprint:** PocketSRE computes hash `(service="yuki-horiz-client", error="platform_not_connected")` and queries NeonDB `learned_playbooks`.
 3. **Pattern Match:** Match retrieved with `confidence_score=4`, originally learned from SRE Lead `@Ivin` with recommended action `RESTART_HORIZ_CONNECTOR`.
 4. **Action Branching:**
    * *Suggest Mode:* PocketSRE delivers Discord alert: *"Learned Playbook Match: Platform connector desync is typically resolved by restarting container. [⚡ Apply Learned Fix]"*. Lead taps once to execute.
-   * *Full Autonomy Mode:* PocketSRE executes `/usr/bin/docker restart horiz-connector` over Paramiko SSH, verifies `/presence` returns `200 OK`, and notifies channel post-facto.
+   * *Full Autonomy Mode:* PocketSRE executes `/usr/bin/docker restart yuki-horiz-client` over Paramiko SSH, verifies `/presence` returns `200 OK`, and notifies channel post-facto.
 5. **Reinforcement:** Increments `success_count` and updates `last_triggered_at` in NeonDB.
 
 ### 7.5 Scenario E: Autonomy Ceiling & Break-Glass Hand-Off (Radical Transparency)
-1. **Trigger:** `yuki-core` emits continuous alerts: `FATAL: could not connect to server: Connection refused (/var/run/postgresql/.s.PGSQL.5432)`.
+1. **Trigger:** `yuki-core-api` emits continuous alerts: `FATAL: could not connect to server: Connection refused (/var/run/postgresql/.s.PGSQL.5432)`.
 2. **Autonomous Diagnostic & Safe Trial:**
-   * Under `DESTRUCTIVE_ONLY` policy, PocketSRE autonomously runs `docker logs --tail 20 yuki-core` and records an `IncidentTrial`.
+   * Under `DESTRUCTIVE_ONLY` policy, PocketSRE autonomously runs `docker logs --tail 20 yuki-core-api` and records an `IncidentTrial`.
    * PocketSRE executes whitelisted restart `RESTART_YUKI_CORE`. Health poller on `/presence/central` still returns `504 Gateway Timeout`.
 3. **Autonomy Ceiling Encountered:**
    * PocketSRE detects that the crash is due to a locked host PostgreSQL UNIX socket on the OCI VM.
@@ -900,21 +944,21 @@ class SweRemediationSession(BaseModel):
 5. **Mobile Break-Glass Console Hand-Off:**
    * SRE Lead opens the signed magic-link on their mobile browser.
    * **Top Screen:** Shows the comprehensive Analyst Dossier detailing exact timestamps, the failed container restart exit code, and why PocketSRE refused to guess.
-   * **Bottom Screen:** Unlocks the Break-Glass Command Bar. The Lead taps the suggested action pill or types `sudo systemctl restart postgresql && docker restart yuki-core`.
+   * **Bottom Screen:** Unlocks the Break-Glass Command Bar. The Lead taps the suggested action pill or types `sudo systemctl restart postgresql && docker restart yuki-core-api`.
 6. **Execution & Restoration:**
    * Command executes over SSH with live SSE terminal logs streaming to the phone screen. Health poller confirms `200 OK`.
    * Complete trial ledger, human command trace, and resolution duration are committed to NeonDB `audit_logs`.
 
 ### 7.6 Scenario F: Knowledge-Augmented Outage Diagnosis (Context Ingestion in Action)
-1. **Trigger:** `yuki-core` container restarts in loop; logs emit: `alembic.util.exc.CommandError: Can't locate revision identified by 'a1b2c3d4'`.
+1. **Trigger:** `yuki-core-api` container restarts in loop; logs emit: `alembic.util.exc.CommandError: Can't locate revision identified by 'a1b2c3d4'`.
 2. **Telemetry Ingest:** PocketSRE captures the unhandled database migration exception.
-3. **Knowledge Store Query:** PocketSRE's reflex engine queries `infra_knowledge_docs` for `service="yuki-core"` and tags `["migration", "alembic", "database"]`.
+3. **Knowledge Store Query:** PocketSRE's reflex engine queries `infra_knowledge_docs` for `service="yuki-core-api"` and tags `["migration", "alembic", "database"]`.
 4. **Ground-Truth Retrieval (<15ms):** Ingested `ARCHITECTURE.md` chunk is retrieved:
    *"Yuki core uses Alembic migrations located in backend/alembic. Database migrations are mounted from host /opt/yuki/migrations. If revision mismatch occurs after git pull, run alembic stamp head or roll back commit."*
 5. **Contextual Action:**
    * PocketSRE bypasses naive container restarts (knowing that restarts cannot resolve missing migration heads).
    * Surfaces an actionable diagnosis to the Discord war room:
-     *“Alembic migration mismatch detected on `yuki-core`. According to your ingested architecture doc, this happens when migrations are out of sync with the mounted volume. Recommending Devin branch rollback or manual alembic stamp.”*
+     *“Alembic migration mismatch detected on `yuki-core-api`. According to your ingested architecture doc, this happens when migrations are out of sync with the mounted volume. Recommending Devin branch rollback or manual alembic stamp.”*
    * Avoids wasted autonomous restarts and saves time and API budget.
 
 ---
@@ -930,8 +974,8 @@ To guarantee 100% demo stability on the houseboat, the following edge cases are 
 | **FAIL-2.1** | **Discord Voice UDP Packet Loss** | Unstable cellular hotspot causes Opus audio frame loss during live voice call | **Graceful Mode B Fallback:** Kiwi detects UDP jitter or VAD timeouts and prompts the user to switch to Discord Voice Notes (Mode B), which upload reliably over HTTP/TCP with zero packet loss. |
 | **FAIL-2.2** | **Target Host Crash & Python Collision** | Co-locating an SRE bot on the monitored host risks bot termination during OOM storms, and running stray scripts pollutes Python dependencies | **Two-VM Out-of-Band Topology & Containerization:** PocketSRE is hosted on a separate OCI Control-Plane VM inside an isolated `container_name: pocketsre-core` container, executing SRE actions strictly via remote SSH. Even if Yuki's VM experiences a kernel panic or CPU freeze, PocketSRE stays online, diagnoses the failure, and alerts engineers. |
 | **FAIL-3.1** | **Sudoers Non-Interactive & Modern Syntax** | Modern Ubuntu (sudo 1.9+) rejects obsolete `requiretty` directive and disallows non-trailing wildcards in argument lists | Omit deprecated `requiretty`, use trailing wildcards (`/usr/bin/docker logs *`) for read-only telemetry, and validate syntax with `visudo -cf`. |
-| **FAIL-3.2** | **Binary Path Mismatch** | Sudo rejects command if path is not absolute | Pin absolute paths strictly in Python's enum (`/usr/bin/docker restart yuki-core`, `/usr/bin/docker restart horiz-connector`). |
-| **FAIL-3.3** | **Unverified Lifecycle Restarts & Name Drift** | Naive container cycling violating Yuki's production integrity rules | Pin `container_name: yuki-core` and `container_name: horiz-connector` in `docker-compose.yml`, AND enforce declarative pre-flight integrity checks in `config.py` (checking `/presence/central` flags before issuing container restarts). |
+| **FAIL-3.2** | **Binary Path Mismatch** | Sudo rejects command if path is not absolute | Pin absolute paths strictly in Python's enum (`/usr/bin/docker restart yuki-core-api`, `/usr/bin/docker restart yuki-horiz-client`). |
+| **FAIL-3.3** | **Unverified Lifecycle Restarts & Name Drift** | Naive container cycling violating Yuki's production integrity rules | Pin `container_name: yuki-core-api` and `container_name: yuki-horiz-client` in `docker-compose.yml`, AND enforce declarative pre-flight integrity checks in `config.py` (checking `/presence/central` flags before issuing container restarts). |
 | **FAIL-3.4** | **SSH Host Key Rejection** | Paramiko aborts on unknown host key | Enforce `client.set_missing_host_key_policy(paramiko.AutoAddPolicy())`. |
 | **FAIL-4.1** | **Devin 90–240s Stage Latency** | Devin VM provisioning exceeds 3-minute pitch window | **Two-Tiered Fast-Path:** Fire Devin asynchronously in background while displaying real-time AST test verification locally; maintain pre-warmed PR branch as contingency. |
 | **FAIL-4.2** | **Gemini 429 Quota Exhaustion** | 15 RPM free tier limit hit during rapid testing | **Dual-Key Rotation:** Automatically failover to backup Gemini API key upon HTTP 429. |

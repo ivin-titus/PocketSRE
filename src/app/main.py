@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from app.actions.service import ActionService
 from app.api.routes import router
 from app.config import get_settings
+from app.incidents.poller import PresencePoller
 from app.incidents.service import IncidentService
 from app.shared.audit import AuditLog
 from app.bot.discord_runtime import run_discord_bot, stop_task
@@ -18,16 +19,37 @@ async def lifespan(app: FastAPI):
     app.state.incidents = IncidentService()
     app.state.actions = ActionService(app.state.audit_log)
     settings = get_settings()
+
+    # Presence Poller for Proactive Target Health
+    endpoints = [ep.strip() for ep in settings.presence_endpoints.split(",") if ep.strip()]
+    app.state.poller = PresencePoller(
+        base_url=settings.presence_base_url,
+        endpoints=endpoints,
+        incidents=app.state.incidents,
+        interval_seconds=15.0,
+    )
+    app.state.poller_task = asyncio.create_task(app.state.poller.run(), name="pocketsre-presence-poller")
+
+    # Discord Gateway Bot Task
     app.state.discord_task = None
     if settings.discord_token:
         app.state.discord_task = asyncio.create_task(
-            run_discord_bot(settings.discord_token, app.state.incidents, app.state.actions),
+            run_discord_bot(
+                settings.discord_token,
+                app.state.incidents,
+                app.state.actions,
+                alert_channel_id=settings.discord_alert_channel_id,
+            ),
             name="pocketsre-discord",
         )
     try:
         yield
     finally:
+        if hasattr(app.state, "poller") and app.state.poller:
+            app.state.poller.stop()
+        await stop_task(app.state.poller_task)
         await stop_task(app.state.discord_task)
+
 
 
 app = FastAPI(title="PocketSRE", version="0.1.0", lifespan=lifespan)

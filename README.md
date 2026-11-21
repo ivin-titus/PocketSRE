@@ -42,7 +42,7 @@ Engineering incidents strike at the worst moments—while commuting, traveling o
 ### 2. 🎭 Dual-Avatar Persona Architecture
 Toggle personalities instantly via Discord (`/pocketsre avatar kiwi` or `/pocketsre avatar vikram`):
 * **Kiwi (Kiwi-chan):** Empathetic, warm, playful companion (*"Daijoubu Senpai! Yuki crashed, but I grabbed the logs. Should I restart it?"*). Purpose-built to lower adrenaline and panic during 2 AM outages.
-* **Vikram:** Crisp, objective, formal senior enterprise SRE lead (*"Incident 501: Container yuki-core terminated by kernel OOM. Recommending immediate restart."*).
+* **Vikram:** Crisp, objective, formal senior enterprise SRE lead (*"Incident 501: Container yuki-core-api terminated by kernel OOM. Recommending immediate restart."*).
 
 ### 3. 🔐 Signed Magic-Link Web Console (The Anti-Timeout Architecture)
 * **The Discord Trap:** Standard Discord interaction buttons timeout in **3 seconds** and often fail with `"Interaction failed"` on mobile or network jitter.
@@ -82,12 +82,13 @@ Toggle personalities instantly via Discord (`/pocketsre avatar kiwi` or `/pocket
 PocketSRE enforces an **Out-of-Band Two-VM Topology** across Oracle Cloud Infrastructure (OCI) to reflect real enterprise DevOps reliability:
 
 ```
-                               ┌────────────────────────────────────────┐
-                               │           INCIDENT INGESTION           │
-                               │   • Sentry Webhooks (/webhook/sentry)  │
-                               │   • Yuki Health Poller (/presence)     │
-                               │   • Generic JSON (/webhook/generic)    │
-                               └───────────────────┬────────────────────┘
+                               ┌────────────────────────────────────────────────────────┐
+                               │                   INCIDENT INGESTION                   │
+                               │   • Discord Webhook Monitor (Infra Alerts in 2 min)    │
+                               │   • Yuki Presence Poller (/presence/{central,etc})     │
+                               │   • Infra Docs Knowledge Base (docs/infra/*.md)        │
+                               │   • [Future: Sentry Webhooks & Generic JSON Ingest]    │
+                               └───────────────────────────┬────────────────────────────┘
                                                    │
                                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -114,7 +115,8 @@ PocketSRE enforces an **Out-of-Band Two-VM Topology** across Oracle Cloud Infras
 │  • Unprivileged System User: `pocketsre` (/etc/sudoers.d/pocketsre whitelisted commands)    │
 │  • Monitored Containers: `yuki-core-api`, `yuki-horiz-client`, `yuki-discord-bot`, `yuki-telegram-bot`, `yuki-redis` │
 │  • Host Services: PostgreSQL (UNIX Domain Socket), NGINX Reverse Proxy, Docker Engine       │
-│  • Health Endpoint: https://yuki-net.ivin.site/presence/central (Polled every 10s)          │
+│  • Health Endpoints: https://yuki-net.ivin.site/presence/{central,discord,horiz,telegram}   │
+│  • Infra Alert Webhook: Discord Webhook (emits alerts within 2m of infra events)             │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
                                                 │
                      ┌──────────────────────────┴──────────────────────────┐
@@ -265,13 +267,13 @@ PocketSRE includes an automated mock incident injector to rehearse demo scenario
 
 ```bash
 # 1. Trigger container crash (Resource Starvation)
-./scripts/inject_mock_incident.sh --scenario crash --service yuki-core
+./scripts/inject_mock_incident.sh --scenario crash --service yuki-core-api
 
 # 2. Trigger application code regression (Devin Auto-PR)
-./scripts/inject_mock_incident.sh --scenario bug --service yuki-core
+./scripts/inject_mock_incident.sh --scenario bug --service yuki-core-api
 
 # 3. Trigger autonomy ceiling (Database socket lock -> Break-Glass Hand-Off)
-./scripts/inject_mock_incident.sh --scenario socket-lock --service yuki-core
+./scripts/inject_mock_incident.sh --scenario socket-lock --service yuki-core-api
 ```
 
 ---

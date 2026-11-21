@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.actions.service import ActionService
+from app.ai.knowledge import load_infra_context
 from app.api.dependencies import actions, incidents
 from app.config import get_settings
 from app.incidents.service import IncidentService
@@ -19,6 +20,11 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@router.get("/api/incidents", response_model=list[Incident])
+def list_incidents(service: IncidentService = Depends(incidents)) -> list[Incident]:
+    return service.list_all()
+
+
 @router.post("/api/incidents", response_model=Incident, status_code=status.HTTP_201_CREATED)
 def create_incident(payload: IncidentCreate, service: IncidentService = Depends(incidents)) -> Incident:
     return service.create(payload)
@@ -30,6 +36,12 @@ def get_incident(incident_id: UUID, service: IncidentService = Depends(incidents
     if not incident:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incident not found")
     return incident
+
+
+@router.get("/api/infra/context")
+def get_infra_context() -> dict[str, str]:
+    return {"context": load_infra_context()}
+
 
 
 @router.post("/api/actions/plan", response_model=ActionResult)
