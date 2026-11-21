@@ -17,6 +17,8 @@ from app.shared.contracts import (
     IncidentSeverity,
     RunbookAction,
 )
+from app.ai.router import LLMRouter
+from app.ai.triage import classify_message
 from app.shared.magic_link import make_console_link
 from app.shared.rbac import actor_role_for
 
@@ -92,6 +94,7 @@ def make_bot(
     autonomy_mode: str = "strict_confirmation",
     devin_api_key: str | None = None,
     role_permissions: dict[str, ActorRole] | None = None,
+    llm_router: LLMRouter | None = None,
 ):
     """Create the Discord adapter lazily so HTTP-only development needs no bot token."""
     import discord
@@ -323,6 +326,33 @@ def make_bot(
             if "approve" in lowered:
                 await _approve_text_path(message)
                 return
+
+            # LLM classification first; keywords are the deterministic fallback.
+            classified = await classify_message(llm_router, message.content)
+            if classified is not None:
+                if classified["intent"] == "status":
+                    await message.channel.send(embed=await status_embed())
+                    return
+                if classified["intent"] == "incident":
+                    severity = IncidentSeverity(classified.get("severity_hint", "P2"))
+                    service = classified.get("service") or "yuki-core-api"
+                    if service == "unknown":
+                        service = "yuki-core-api"
+                    incident = incidents.create(
+                        IncidentCreate(
+                            source="discord_reactive",
+                            service=service,
+                            summary=classified.get("summary") or message.content[:500],
+                            severity=severity,
+                        )
+                    )
+                    await message.channel.send(
+                        embed=alert_embed(incident, console_url(incident, str(message.author.id)), autonomy_mode),
+                        view=IncidentApprovalView(incident),
+                    )
+                    return
+                return  # "other": not our business
+
             if any(k in lowered for k in ("fine", "status", "healthy", "everything ok")):
                 await message.channel.send(embed=await status_embed())
                 return
@@ -400,6 +430,7 @@ async def run_discord_bot(
     autonomy_mode: str = "strict_confirmation",
     devin_api_key: str | None = None,
     role_permissions: dict[str, ActorRole] | None = None,
+    llm_router: LLMRouter | None = None,
 ) -> None:
     bot = make_bot(
         incidents,
@@ -411,6 +442,7 @@ async def run_discord_bot(
         autonomy_mode=autonomy_mode,
         devin_api_key=devin_api_key,
         role_permissions=role_permissions,
+        llm_router=llm_router,
     )
     await bot.start(token)
 

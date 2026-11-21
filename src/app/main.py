@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.actions.service import ActionService
 from app.actions.ssh_executor import SshExecutor, SshNotConfiguredError
+from app.ai.factory import build_llm_router
 from app.api.console import router as console_router
 from app.api.routes import router
 from app.config import get_settings
@@ -50,6 +51,7 @@ async def lifespan(app: FastAPI):
         executor = SshExecutor.from_settings(settings)
     except SshNotConfiguredError:
         executor = None
+    app.state.llm = build_llm_router(settings)
     app.state.probe = PresenceProbe(settings.presence_base_url)
     app.state.actions = ActionService(
         app.state.audit_log,
@@ -84,6 +86,7 @@ async def lifespan(app: FastAPI):
                 autonomy_mode=settings.autonomy_mode,
                 devin_api_key=settings.devin_api_key,
                 role_permissions=parse_role_permissions(settings.role_permissions),
+                llm_router=app.state.llm,
             ),
             name="pocketsre-discord",
         )

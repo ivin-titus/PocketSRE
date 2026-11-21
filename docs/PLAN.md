@@ -23,7 +23,7 @@
 | **Tool-call registry** | ✅ Done | `actions/tools.py` — name/description/mutating per tool; LLM-ready schemas |
 | **Autonomy mode enforcement** | ⚠️ Partial | `FULL_AUTONOMY` auto-runs + announces; `READ_AUTO` free-run vs `STRICT_CONFIRMATION` ask-gate not yet differentiated |
 | **Proactive flow** | ✅ Done | Card→buttons→execute→report→resolution loop live incl. Devin dispatch button + mode badge |
-| **Reactive flow** (`/status` live, free-text triage) | ⚠️ Partial | `/status` shows live presence per route + open incidents; mention/`pocketsre` messages triage via keyword heuristics (Gemini free-text parsing still pending) |
+| **Reactive flow** (`/status` live, free-text triage) | ✅ Done | LLM classification (`ai/triage.py`) parses intent/service/severity; keyword heuristics remain deterministic fallback when router absent or LLM fails |
 | **Discord RBAC + DM guards** | ✅ Done | `ROLE_PERMISSIONS` config (`SRE-Lead`→lead, `DevOps`→responder, `Junior-Dev`→viewer), `guild_only` on all commands, DM early-return, highest-rank wins |
 | **Approval surfaces** (buttons, `/approve`, magic-link) | ✅ Done | Buttons + `/approve` slash + `@PocketSRE approve` text + console-side approve pills (click = approval, runs as LEAD) |
 | **Devin dispatch** (code-regression path) | ⚠️ Partial | `swe/dispatch.py` posts to `/v1/sessions` with stub fallback; button on cards (lead-gated); Linear/GitHub linking pending |
@@ -33,10 +33,10 @@
 | **Web console UI** (incident page, action pills, logs) | ✅ Done | `/console/` — token-gated incident detail, tool pills w/ confirm-gate on mutations, result/log panes, spend gauge, SSE feed |
 | **Mission-control page** (health cards, spend gauge, SSE) | ✅ Done | `/console/mission-control.html` — live presence cards (15s refresh), spend gauge, SSE audit feed |
 | **Knowledge upload + injection into triage** | ❌ Pending | No `/api/knowledge/upload`, no `/pocketsre learn-infra` |
-| **GeminiClient wiring** | ❌ Pending | Protocol exists; real client ports from Yuki |
+| **Gemini + OpenAI client wiring** | ✅ Done | `ai/clients/gemini.py` + `ai/clients/openai.py` (Yuki ports adapted to LLMProvider), `ai/factory.py` picks provider via `AI_PROVIDER`; wired into reactive triage |
 | `scripts/inject_mock_incident.sh` | ❌ Pending | Referenced in README; doesn't exist |
 
-**Phase readiness:** Phase 1 ≈ 60% · Phase 2 (voice notes/code-mixing) = 0% · Phase 3 (live voice) = 0%
+**Phase readiness:** Phase 1 ≈ 65% · Phase 2 (voice notes/code-mixing) = 0% · Phase 3 (live voice) = 0%
 
 **Verified environment facts:**
 - SSH to target VM works: `ssh -i ~/.ssh/pocketsre_bot_ed25519 pocketsre@161.118.252.7 'sudo /usr/bin/docker logs --tail 10 yuki-telegram-bot'`
@@ -111,7 +111,7 @@ detect → investigate → run fixing runbook (e.g. restart) → transparent rep
 - **B1. ✅ RBAC guards** — `guild_only()` on all commands, `getattr(interaction.user, "roles", [])`, configurable `ROLE_PERMISSIONS` (`SRE-Lead` → lead/all incl. Devin dispatch, `DevOps` → responder/mutations, `Junior-Dev` → viewer/read-only), DM rejection.
 - **B2. ✅ Alert card** — embed with summary + buttons (Fetch logs / Inspect / Approve & Restart / Dispatch Devin / Deny) + console link + autonomy-mode badge.
 - **B3. ✅ Approval handler** — button callbacks + `/approve <incident_id>` + `@PocketSRE approve` text path → `ActionService.execute()`.
-- **B4. ⚠️ Reactive commands** — `/status` live presence + open incidents (spend gauge pending Track D); `/triage` done; free-text mention triage uses keyword heuristics until GeminiClient lands.
+- **B4. ✅ Reactive commands** — `/status` live presence + open incidents; `/triage` done; free-text mention triage runs through the LLM router (Gemini default, OpenAI-compatible via `OPENAI_BASE_URL`) with keyword fallback.
 - **B5. ✅ Result report** — `report_embed` posts status + truncated output; `resolution_embed` posts recovery summary.
 - **B6. ⚠️ Devin dispatch card** — lead-gated `Dispatch Devin fix` button → `POST /v1/sessions` → session URL posted; stub fallback when `DEVIN_API_KEY` unset. PR link-back + Linear pending.
 - **B7. ✅ Line-1 deferral** — `defer()` first in every handler (FAIL-1.1).

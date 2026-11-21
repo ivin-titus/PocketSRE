@@ -234,8 +234,12 @@ POCKETSRE_DISCORD_GUILD_ID="your_server_id"
 POCKETSRE_DISCORD_ALERT_CHANNEL_ID="your_alerts_channel_id"
 
 # AI & Speech
+POCKETSRE_AI_PROVIDER="gemini"          # or "openai"
 POCKETSRE_GEMINI_API_KEYS="primary_key,fallback_key"
 POCKETSRE_GEMINI_MODEL="gemini-2.0-flash-lite"
+POCKETSRE_OPENAI_API_KEY=""             # OpenAI/OpenRouter fallback
+POCKETSRE_OPENAI_BASE_URL=""
+POCKETSRE_OPENAI_MODEL="gpt-4o-mini"
 POCKETSRE_SARVAM_API_KEY=""        # Phase 2 — metered credits (500)
 POCKETSRE_SMALLEST_AI_API_KEY=""   # Phase 2 — metered credits ($60)
 

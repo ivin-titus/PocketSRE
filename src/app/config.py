@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     web_dist_path: Path = Path("src/web/dist")
     gemini_api_keys: str = ""
     gemini_model: str = "gemini-2.0-flash-lite"
+    ai_provider: str = "gemini"  # gemini | openai
+    openai_api_key: str = ""
+    openai_base_url: str = ""  # OpenAI-compatible endpoints (e.g. OpenRouter)
+    openai_model: str = "gpt-4o-mini"
     llm_request_timeout_seconds: float = 20.0
     llm_max_retries: int = 2
     presence_base_url: str = "https://yuki-net.ivin.site/presence"
