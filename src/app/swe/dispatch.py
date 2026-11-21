@@ -13,6 +13,7 @@ class DevinDispatcher:
     def __init__(self, api_key: str | None, timeout_seconds: float = 15.0) -> None:
         self.api_key = api_key
         self.timeout_seconds = timeout_seconds
+        self._last_session_id: str | None = None
 
     def dispatch(self, incident: Incident) -> str:
         """Return the Devin session URL, or a stub note when unconfigured."""
@@ -43,4 +44,22 @@ class DevinDispatcher:
         except URLError as exc:
             return f"⚠️ Devin dispatch failed: {exc.reason}"
         url = data.get("url") or f"https://app.devin.ai/sessions/{data.get('session_id', '')}"
+        self._last_session_id = data.get("session_id")
         return f"🤖 Devin session dispatched: {url}"
+
+    def session_pull_requests(self, session_id: str) -> list[str]:
+        """`GET /v1/sessions/{id}` → PR urls the session produced ([] when none/unavailable)."""
+        if not (self.api_key and session_id):
+            return []
+        req = urllib.request.Request(
+            f"https://api.devin.ai/v1/sessions/{session_id}",
+            headers={"Authorization": f"Bearer {self.api_key}"},
+            method="GET",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout_seconds) as response:
+                data = json.loads(response.read().decode("utf-8"))
+        except Exception:
+            return []
+        prs = data.get("pull_requests") or []
+        return [p if isinstance(p, str) else p.get("url", "") for p in prs]

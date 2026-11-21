@@ -103,6 +103,8 @@ async def lifespan(app: FastAPI):
                     settings.github_pat,
                     settings.github_repo,
                 ),
+                pr_watch_interval_seconds=settings.pr_watch_interval_seconds,
+                pr_watch_timeout_minutes=settings.pr_watch_timeout_minutes,
             ),
             name="pocketsre-discord",
         )

@@ -137,6 +137,8 @@ def make_bot(
     devin_session_cost_usd: float = 1.00,
     llm_call_cost_usd: float = 0.00,
     tracker: IssueTracker | None = None,
+    pr_watch_interval_seconds: float = 300.0,
+    pr_watch_timeout_minutes: float = 720.0,
 ):
     """Create the Discord adapter lazily so HTTP-only development needs no bot token."""
     import discord
@@ -146,6 +148,9 @@ def make_bot(
     intents = discord.Intents.default()
     intents.message_content = True
     bot = commands.Bot(command_prefix="/", intents=intents)
+
+    dispatcher = DevinDispatcher(devin_api_key)
+    pr_watches: list[dict] = []  # {incident, session_id, channel, pr_url, dispatched_at, reminded}
 
     def console_url(incident: Incident, actor_id: str) -> str | None:
         if not (public_base_url and magic_link_secret):
@@ -182,7 +187,6 @@ def make_bot(
         await channel.send(embed=report_embed(result))
         return result
 
-    dispatcher = DevinDispatcher(devin_api_key)
 
     async def status_embed():
         """Live presence snapshot + open incidents + spend placeholder."""
@@ -282,6 +286,18 @@ def make_bot(
             await interaction.channel.send(note)
             if budget is not None:
                 budget.record("devin", devin_session_cost_usd, self.incident.id)
+            if dispatcher._last_session_id:
+                pr_watches.append(
+                    {
+                        "incident": self.incident,
+                        "session_id": dispatcher._last_session_id,
+                        "channel": interaction.channel,
+                        "pr_url": None,
+                        "dispatched_at": asyncio.get_event_loop().time(),
+                        "reminded": False,
+                    }
+                )
+                dispatcher._last_session_id = None
             if tracker is not None:
                 refs = await asyncio.to_thread(
                     tracker.create_issue,
@@ -346,11 +362,79 @@ def make_bot(
             elif event.kind == "resolved":
                 await channel.send(embed=resolution_embed(incident))
 
+    async def pr_watch_consumer() -> None:
+        """Follow-up loop: poll Devin session → PR appears → poll GitHub merge state →
+        post transparency updates; re-ping lead on stale PRs; resolve incident on merge."""
+        await bot.wait_until_ready()
+        import time
+
+        while True:
+            await asyncio.sleep(pr_watch_interval_seconds)
+            for watch in list(pr_watches):
+                channel = watch["channel"]
+                incident = watch["incident"]
+                try:
+                    if watch["pr_url"] is None:
+                        prs = await asyncio.to_thread(
+                            dispatcher.session_pull_requests, watch["session_id"]
+                        )
+                        if prs:
+                            watch["pr_url"] = prs[0]
+                            if tracker is not None:
+                                await asyncio.to_thread(
+                                    tracker.link_pr, incident, watch["pr_url"]
+                                )
+                            await channel.send(
+                                f"🔧 Devin opened a fix PR for `{incident.id}`: {watch['pr_url']}\n"
+                                "Watching for merge — a human SWE reviews + merges it."
+                            )
+                        continue
+                    if tracker is None:
+                        continue  # can announce the PR but cannot poll merge state
+                    status = await asyncio.to_thread(tracker.pr_status, watch["pr_url"])
+                    if status is None:
+                        continue
+                    if status.get("merged"):
+                        by = status.get("merged_by") or "a SWE"
+                        await channel.send(
+                            f"✅ PR merged by **{by}** for `{incident.id}` — re-checking service health."
+                        )
+                        reasons = None
+                        if actions.presence is not None:
+                            reasons = await asyncio.to_thread(
+                                actions.presence.health_reasons, incident.service
+                            )
+                        if reasons:
+                            await channel.send(
+                                f"⚠️ Still unhealthy after merge: {'; '.join(reasons)} — incident stays open."
+                            )
+                        else:
+                            incidents.resolve(incident.id)
+                            await channel.send(embed=resolution_embed(incident))
+                        pr_watches.remove(watch)
+                    elif status.get("state") == "closed":
+                        await channel.send(
+                            f"❌ PR {watch['pr_url']} closed without merge for `{incident.id}` — "
+                            "escalate or re-dispatch."
+                        )
+                        pr_watches.remove(watch)
+                    else:
+                        age_min = (time.monotonic() - watch["dispatched_at"]) / 60
+                        if age_min > pr_watch_timeout_minutes and not watch["reminded"]:
+                            watch["reminded"] = True
+                            await channel.send(
+                                f"⏰ PR {watch['pr_url']} for `{incident.id}` still unmerged after "
+                                f"{int(age_min)} min — a lead should review it."
+                            )
+                except Exception:
+                    continue  # transient API/Discord failures never kill the watcher
+
     @bot.event
     async def on_ready() -> None:
         await bot.tree.sync()
         if alerts is not None:
             bot.loop.create_task(alert_consumer(), name="pocketsre-alert-consumer")
+        bot.loop.create_task(pr_watch_consumer(), name="pocketsre-pr-watch")
 
     @bot.event
     async def on_message(message: discord.Message) -> None:
@@ -531,6 +615,8 @@ async def run_discord_bot(
     devin_session_cost_usd: float = 1.00,
     llm_call_cost_usd: float = 0.00,
     tracker: IssueTracker | None = None,
+    pr_watch_interval_seconds: float = 300.0,
+    pr_watch_timeout_minutes: float = 720.0,
 ) -> None:
     bot = make_bot(
         incidents,
@@ -548,6 +634,8 @@ async def run_discord_bot(
         devin_session_cost_usd=devin_session_cost_usd,
         llm_call_cost_usd=llm_call_cost_usd,
         tracker=tracker,
+        pr_watch_interval_seconds=pr_watch_interval_seconds,
+        pr_watch_timeout_minutes=pr_watch_timeout_minutes,
     )
     await bot.start(token)
 

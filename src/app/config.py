@@ -65,6 +65,8 @@ class Settings(BaseSettings):
     budget_smallest_daily_usd: float | None = None
     max_trials_per_incident: int = 3
     execution_privilege_mode: str = "non_root"  # non_root | full_root (PRD §3)
+    pr_watch_interval_seconds: float = 300.0  # poll cadence for Devin PR follow-ups
+    pr_watch_timeout_minutes: float = 720.0  # stale-PR re-ping threshold
 
 
     @property

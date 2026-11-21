@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 from app.shared.contracts import Incident, IncidentSeverity, IncidentStatus
+from app.swe.dispatch import DevinDispatcher
 from app.swe.tracker import IssueTracker
 
 
@@ -70,3 +71,17 @@ def test_linear_error_surfaces_not_crashes() -> None:
         urlopen.return_value = _resp({"errors": [{"message": "Unauthorized"}]})
         refs = tracker.create_issue(_incident(), "ctx", code_level=False)
     assert refs["linear_error"] == "Unauthorized"
+
+
+def test_dispatcher_session_pull_requests() -> None:
+    dispatcher = DevinDispatcher("devin-key")
+    payload = {"pull_requests": [{"url": "https://github.com/owner/repo/pull/9"}]}
+    with patch("app.swe.dispatch.urllib.request.urlopen") as urlopen:
+        urlopen.return_value = _resp(payload)
+        prs = dispatcher.session_pull_requests("sess-1")
+    assert prs == ["https://github.com/owner/repo/pull/9"]
+
+
+def test_dispatcher_session_pull_requests_no_key() -> None:
+    dispatcher = DevinDispatcher(None)
+    assert dispatcher.session_pull_requests("sess-1") == []
