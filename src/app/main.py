@@ -19,6 +19,7 @@ from app.shared.audit import AuditLog
 from app.shared.budget import BudgetGovernor
 from app.shared.rbac import parse_role_permissions
 from app.storage.db import Database
+from app.swe.tracker import IssueTracker
 from app.bot.discord_runtime import run_discord_bot, stop_task
 
 
@@ -95,6 +96,12 @@ async def lifespan(app: FastAPI):
                 budget=app.state.budget,
                 devin_session_cost_usd=settings.devin_session_cost_estimate_usd,
                 llm_call_cost_usd=settings.llm_call_cost_estimate_usd,
+                tracker=IssueTracker(
+                    settings.linear_api_key,
+                    settings.linear_team_id,
+                    settings.github_pat,
+                    settings.github_repo,
+                ),
             ),
             name="pocketsre-discord",
         )

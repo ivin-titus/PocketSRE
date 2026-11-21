@@ -9,6 +9,7 @@ from app.incidents.alerts import AlertBridge, AlertEvent
 from app.incidents.presence import ROUTE_CONTAINER_DEFAULTS
 from app.incidents.service import IncidentService
 from app.swe.dispatch import DevinDispatcher
+from app.swe.tracker import IssueTracker
 from app.shared.contracts import (
     ActionRequest,
     ActionResult,
@@ -135,6 +136,7 @@ def make_bot(
     budget: BudgetGovernor | None = None,
     devin_session_cost_usd: float = 1.00,
     llm_call_cost_usd: float = 0.00,
+    tracker: IssueTracker | None = None,
 ):
     """Create the Discord adapter lazily so HTTP-only development needs no bot token."""
     import discord
@@ -280,6 +282,23 @@ def make_bot(
             await interaction.channel.send(note)
             if budget is not None:
                 budget.record("devin", devin_session_cost_usd, self.incident.id)
+            if tracker is not None:
+                refs = await asyncio.to_thread(
+                    tracker.create_issue,
+                    self.incident,
+                    self.incident.summary + "\n\n" + note,
+                    True,  # Devin dispatch implies a code-level incident
+                )
+                links = [
+                    f"Linear: {refs['linear_url']}" if refs.get("linear_url") else None,
+                    f"GitHub: {refs['github_url']}" if refs.get("github_url") else None,
+                ]
+                errors = [
+                    f"Linear failed: {refs['linear_error']}" if refs.get("linear_error") else None,
+                    f"GitHub failed: {refs['github_error']}" if refs.get("github_error") else None,
+                ]
+                body = "\n".join([p for p in links + errors if p]) or "No trackers configured"
+                await interaction.channel.send(f"📋 Tracked — {body}")
 
         @discord.ui.button(label="Deny", style=discord.ButtonStyle.secondary)
         async def deny(self, interaction: discord.Interaction, button) -> None:
@@ -511,6 +530,7 @@ async def run_discord_bot(
     budget: BudgetGovernor | None = None,
     devin_session_cost_usd: float = 1.00,
     llm_call_cost_usd: float = 0.00,
+    tracker: IssueTracker | None = None,
 ) -> None:
     bot = make_bot(
         incidents,
@@ -527,6 +547,7 @@ async def run_discord_bot(
         budget=budget,
         devin_session_cost_usd=devin_session_cost_usd,
         llm_call_cost_usd=llm_call_cost_usd,
+        tracker=tracker,
     )
     await bot.start(token)
 

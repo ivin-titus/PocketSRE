@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     neon_database_url: str | None = None
     devin_api_key: str | None = None
     linear_api_key: str | None = None
+    linear_team_id: str | None = None
+    github_pat: str | None = None
+    github_repo: str | None = None  # owner/repo for code-level issue tracking
 
     # Budget governor (USD caps; Gemini free tier counts $0)
     budget_per_incident_usd: float = 5.00
