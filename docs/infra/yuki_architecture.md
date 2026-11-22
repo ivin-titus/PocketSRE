@@ -323,3 +323,15 @@ pocketsre ALL=(ALL) NOPASSWD: /usr/bin/uptime
 ```
 
 (Note: `df`, `free`, `uptime` run fine unprivileged — sudo entries only needed if invoked under elevated diagnostic paths.)
+
+---
+
+## 9. PocketSRE Operational Reality & Verified Surface
+
+At the conclusion of the HackaThoni sprint, the integration between PocketSRE and Project Yuki is characterized by the following verified runtime facts:
+- **Transport:** Out-of-band SSH via Paramiko authenticated using an Ed25519 key pair to unprivileged user `pocketsre` on `yukihira`.
+- **Target Containers:** The five qualified Docker containers (`yuki-core-api`, `yuki-horiz-client`, `yuki-discord-bot`, `yuki-telegram-bot`, `yuki-redis`) are managed through strict Pydantic v2 runbooks mapping 1:1 to the verified sudoers entries in Section 8.2.
+- **Presence Endpoints:** Polled every 15 seconds by `PresencePoller` across `/presence/central`, `/presence/discord`, `/presence/horiz`, and `/presence/telegram` with a 2-consecutive-failure flap dampener.
+- **Incident Escalation:** If three mutating attempts fail to recover a container, PocketSRE halts mutating commands and surfaces an Analyst Dossier for the human SRE lead, preventing container cycling storms on Yuki.
+- **Limitations:** See [PLAN.md](../PLAN.md) for full audit details regarding the absence of conversational text chat, deferred speech pipelines, and manual resolution boundaries.
+

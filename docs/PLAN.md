@@ -1,235 +1,155 @@
-# PLAN.md — Phase 1 Functional Build Plan
+# PLAN.md — Post-Hackathon Reality Audit & Sprint Conclusion
 
-**Scope:** Make PocketSRE Phase 1 (Mode A: text + magic-link console + SSH runbooks) genuinely functional end-to-end — testable by the operator against the real Yuki VM.
+> **Status:** **DEVELOPMENT CONCLUDED / STOPPED**  
+> **Final Architecture:** Discord Bot + Signed Mobile Web Console + Paramiko SSH Runbooks  
+> **Target Track Outcome:** Track 02 (Voice & Language) reduced to Discord bot text/embeds + template multilingual presentation; voice notes, live voice channels, and conversational text exchange were **deferred due to hackathon time limits**.
 
-**Current state:** ~60% of Phase 1. Detection + execution spine + proactive *and* reactive Discord loops + NeonDB write-through + token-gated console/mission-control pages exist; budget governor, loop guard, and LLM wiring remain absent.
+---
 
-## 0. Where we are vs what's pending
+## 1. Executive Summary: Solo Build Vision vs. What Landed
 
-| Capability | Status | Notes |
+PocketSRE was designed for **HackaThoni 2026 Track 02: Voice & Language ("Beyond English")** as an overnight solo build with the goal of providing an autonomous, speech-first on-call SRE companion that engineers could converse with in English, Malayalam, Hindi, or code-mixed speech (Manglish/Hinglish) from a phone on a houseboat without opening a laptop.
+
+**The Reality at the Sprint Stopping Point:**
+As a solo build within a strict 12-hour overnight window, building both an out-of-band SRE control plane and an Indic speech AI stack was a heavy lift. The solo developer prioritized building a stable, crash-proof operational core (SSH execution, restricted sudoers, presence polling, budget caps, loop guards, signed mobile web console) over fragile experimental voice pipelines. 
+
+As a consequence:
+1. **Interactive Voice is 0% Complete:** Neither async voice notes (Sarvam Saaras STT + Bulbul TTS) nor live Discord voice channels were built. The speech API keys in config are dormant.
+2. **Interactive Text Conversation is NOT Implemented:** PocketSRE is **not** a conversational chatbot. It does not engage in free-form text dialogue. Casual inquiries like `"@PocketSRE Yuki de services ellam okay aano ? I just need a simple reply"` fail to receive any reply.
+3. **Discord Bot Operational Commands Work:** Slash commands (`/status`, `/approve`, `/triage`, `/pocketsre avatar`, `/pocketsre help`) and incident card buttons (`Fetch logs`, `Inspect`, `Approve & Restart`, `Deny`, `Dispatch Devin fix`) work as intended over Paramiko SSH against the live Project Yuki VM.
+4. **Incidents Work Within Rigid Boundaries:** Presence polling, webhook alerting, loop guards, and signed console triage work, but remain limited by rigid heuristic classifiers and lack of cross-incident correlation.
+
+Development is officially **concluded here** with no plans to continue.
+
+---
+
+## 2. Capability Scorecard (Vision vs. Implemented Reality)
+
+| Capability | Planned Vision (PRD) | Implemented Reality | Operational Status |
+|---|---|---|---|
+| **Out-of-Band SSH Execution** | Non-root `pocketsre` SSH execution on target VM | Paramiko SSH client running typed runbooks against verified `/etc/sudoers.d/pocketsre` whitelist | ✅ **100% Working** |
+| **Typed Runbook Whitelist** | Whitelisted Docker, Nginx, and host diagnostics | Full coverage of logs, inspect, top, restart, stop, start, stats, ps, prune, nginx status/test/restart, and journalctl | ✅ **100% Working** |
+| **Discord Slash Commands** | Complete slash suite for triage and ops | `/status`, `/approve`, `/triage`, `/pocketsre avatar`, `/pocketsre help` implemented and synced | ✅ **95% Working** |
+| **Signed Mobile Web Console** | Anti-timeout mobile console with live log tailing | Token-gated `/console/` with "What should I do next?", grouped tools, pre-flight checks, confirmation modal, and ANSI-sanitized logs | ✅ **95% Working** |
+| **Mission Control Dashboard** | Central operational dashboard with live SSE stream | `/console/mission-control.html` with granular health states, open incident count, spend gauge, and live SSE feed | ✅ **95% Working** |
+| **Presence Poller** | Dual-channel proactive monitoring of Yuki endpoints | Polls `/presence/{central,discord,horiz,telegram}` every 15s with 2-failure flap threshold; auto-resolves its own incidents | ✅ **90% Working** |
+| **Webhook Alert Ingestion** | Ingest host watchdog alerts in real-time | Listens to Discord webhook messages; classifies via Gemini Decision 1 / keyword heuristics | ✅ **85% Working** |
+| **Budget Governor** | Hard $5 incident cap & provider limits | Thread-safe spend tracker enforcing incident and provider flat/daily caps before calls; persisted in NeonDB | ✅ **90% Working** |
+| **Loop Guard & Escalation** | Prevent runaway retry loops; 4-pillar dossier | Capped at 3 mutating trials; blocks duplicate mutations; generates 4-pillar dossier and halts safely | ✅ **90% Working** |
+| **Autonomous SWE Dispatch** | Dispatch Devin sessions + Linear/GitHub issues | Devin API `POST /v1/sessions` dispatch works with key; stub fallback without key; PR watch loop polls merge state | ⚠️ **Functional / Partial** |
+| **Text Multilingual Presentation** | Adaptive code-mixing in English, Malayalam, Hindi | Regex/keyword detector (`src/app/persona/presentation.py`) formats embed titles/intros in 5 template styles | ⚠️ **Template-Only (No Dynamic Gen)** |
+| **Free-Text Conversational Chat** | Interactive conversational on-call triage | Mention handler only looks for specific operational intents; no conversational chat loop exists | ❌ **Broken / Missing** |
+| **Sarvam Speech (Voice Notes)** | Mode B: `.ogg` voice notes, Saaras STT, Bulbul TTS | Unimplemented. `sarvam_api_key` in config is unused. | ❌ **0% (Deferred)** |
+| **Live Discord Voice Channel** | Mode C: Live voice channel war room | Unimplemented. RTP Opus decoding and voice gateway deferred. | ❌ **0% (Deferred)** |
+| **Adaptive Incident Memory** | Self-learning playbooks in `learned_playbooks` | Table not created in DDL; learning loop from human lead approvals not implemented. | ❌ **0% (Deferred)** |
+
+---
+
+## 3. Deep Dive: Why Free-Text Messages Fail (The "No Reply" Bug)
+
+Responders testing PocketSRE in Discord noticed that messages such as:
+> `"@PocketSRE Yuki de services ellam okay aano ? I just need a simple reply"`
+
+receive **absolutely no reply** from the bot. 
+
+### Technical Root Cause in `src/app/bot/discord_runtime.py`:
+1. **The Bot Is Not a Conversational Agent:** PocketSRE has no chat completion loop, no conversational context buffer, and no general LLM reply handler. It is strictly an operational event dispatcher.
+2. **Rigid Branching in `on_message`:** When the bot is mentioned (`bot.user in message.mentions`), execution enters lines 670–751 of `discord_runtime.py`. It evaluates only three hardcoded execution paths:
+   - **Path A: Approval Check:** If `"approve"` is in the message, it runs `_approve_text_path()`.
+   - **Path B: LLM / Keyword Classification:** It calls `classify_message()` or `is_status_query()`.
+     - If classified as `intent == "status"`: It sends a structured Discord Embed (`status_embed`) listing container checkmarks. It **never** sends a plain-text conversational answer (such as *"Yes, Yuki services are fine"*).
+     - If classified as `intent == "incident"`: It creates a formal Incident object and posts an `alert_embed` action card with buttons.
+   - **Path C: Down/Crash Keyword Fallback:** If words like `"down"`, `"crash"`, `"error"`, `"broken"` appear, it opens a P2 incident.
+3. **The Fall-Through Black Hole:**
+   If the LLM classifier (`classify_message`) returns `intent: "other"` (or if LLM keys are absent, rate-limited, or timing out) AND the message does not match exact status markers (`_STATUS_MARKERS`) or incident keywords, **the handler executes nothing**. It simply hits `await bot.process_commands(message)` and exits silently.
+4. **Mention Parsing Failures:**
+   If a user types `@PocketSRE` as plain text without selecting Discord's autocomplete tag (`<@bot_user_id>`), `bot.user in message.mentions` evaluates to `False`, causing the bot to ignore the message completely.
+
+---
+
+## 4. Discord Bot Commands Reality (What Works vs. Edge Cases)
+
+### Working Slash Commands
+All slash commands are registered under `@app_commands.guild_only()` and enforce Discord role mapping:
+- **`/status`:** Queries `actions.presence.health_reasons()` across all four Yuki presence routes and returns a color-coded Discord embed with open incident counts and active autonomy mode.
+- **`/approve <incident_id>`:** Allows a lead to approve container restarts directly from Discord chat without clicking card buttons. Matches full or prefix incident IDs.
+- **`/triage <service> <summary>`:** Manually opens a P2 incident for a monitored Yuki container.
+- **`/pocketsre avatar <kiwi|vikram>`:** Sets the server's persona (Kiwi = empathetic companion; Vikram = formal corporate SRE).
+- **`/pocketsre avatar`:** Displays the currently active server persona.
+- **`/pocketsre help`:** Displays the persona and language mirroring explanation card.
+
+### Working Interactive Card Buttons
+Incident alert cards render five interactive UI buttons:
+- **`[Fetch logs]`:** Executes `sudo docker logs --tail 50 <container>` over SSH and posts a green/orange report embed.
+- **`[Inspect]`:** Executes `sudo docker inspect <container>` over SSH.
+- **`[Approve & Restart]`:** Requires `SRE-Lead` role; executes `sudo docker restart <container>` over SSH, followed by a 3-second sleep and post-execution verification via `PresenceProbe`.
+- **`[Dispatch Devin fix]`:** Requires `SRE-Lead` role; posts to `https://api.devin.ai/v1/sessions` and initiates the background PR watch task.
+- **`[Deny]`:** Cancels the pending action and disables the button.
+
+### Known Discord Quirks & Bugs
+- **10-Minute View Expiry:** Discord interaction views expire after 600 seconds. After 10 minutes, buttons are disabled and the footer updates to instruct responders to use `/approve` or the signed console link.
+- **Volatile Guild Personas:** Server persona choices are held in-memory (`guild_personas: dict[int, Persona]`) in the Python process. Restarting the Docker container resets all guilds back to `POCKETSRE_PERSONA_DEFAULT` (`kiwi`).
+- **DM Guard Rejection:** All slash commands reject direct messages (DMs) by design because DMs lack server roles, preventing RBAC role evaluation.
+
+---
+
+## 5. Incident Lifecycle & Autonomy Edge Cases
+
+### Ingestion & Flap Damping
+- **Presence Poller Flap Threshold:** The poller requires **2 consecutive failed polls** (`flap_threshold = 2`) before opening an incident. Transient network blips or momentary drops will not page the channel.
+- **Isolation of Resolution:** The poller will **only** resolve incidents whose source is `presence_poller:<route>`. It will never auto-resolve an incident opened manually via `/triage` or ingested via webhook, avoiding premature closure of unrelated outages.
+
+### Autonomy Policy Modes
+- **`read_auto` (Default):** Read-only diagnostics (`fetch_service_logs`, `inspect_service`) execute automatically upon incident creation and announce results in Discord; mutating restarts require human approval.
+- **`strict_confirmation`:** All actions (including logs) require explicit human click approval.
+- **`full_autonomy`:** Runs diagnostics and container restarts immediately without asking, announcing post-facto.
+
+### Loop Guard & Break-Glass Escalation
+- If a mutating action fails and is re-attempted on the same incident, or if an incident reaches **3 mutating trials** (`MAX_TRIALS_PER_INCIDENT`), the loop guard triggers `EscalationRequiredError`.
+- It halts automated attempts and posts a **4-Pillar Analyst Dossier** embed to Discord detailing:
+  1. What happened
+  2. What was tried
+  3. Why it halted
+  4. Recommended next steps for the human lead
+
+### Known Incident Bugs & Limitations
+- **No Cross-Incident Correlation:** If `yuki-core-api` crashes, triggering downstream disconnections on `yuki-discord-bot` and `yuki-telegram-bot`, the system may open separate incidents for each service instead of correlating them to the root cause container.
+- **Single Active Incident per Service:** `get_active_for_service()` dedups to a single open incident per service. Subsequent distinct errors on the same container while an incident remains open will not spawn new alerts.
+
+---
+
+## 6. Web Console & Mission Control Reality
+
+The web application is served as static HTML, CSS, and Vanilla JavaScript from `src/web/dist/` (mounted by FastAPI at `/console/`). No Node.js runtime is required in production.
+
+### Mobile Incident Console (`/console/?token=...`)
+- **HMAC Token Gated:** Requires a 15-minute cryptographically signed token (`make_console_link`) containing `incident_id` and `actor_id`.
+- **"What should I do next?":** Evaluates action history and recommends safe, non-destructive diagnostics (logs/inspect) first.
+- **Tool Categorization & Pre-Flight:** Actions are grouped into *Recommended*, *Safe diagnostics*, *Recovery*, and *Advanced/Host*. Pre-flight checks disable incompatible tools with hover tooltips.
+- **Mutating Action Confirmation:** Destructive actions trigger a modal detailing the exact command, target service, and side-effect warnings.
+- **ANSI Stripping:** Raw terminal color escape sequences are sanitized via `stripAnsi` before rendering into scrollable code blocks.
+
+### Operational Mission Control (`/console/mission-control.html?token=...`)
+- **Summary Metrics:** Overall system state, healthy/degraded/unreachable/no-coverage counters, open incident count, and spend.
+- **Granular Health Cards:** Real-time presence statuses with collapsible payload JSON.
+- **Null-Safe Spend Display:** Shows `"Not configured"` or `"—"` rather than `$null`.
+- **Live SSE Feed:** Subscribes to `/api/console/stream` for real-time poller alert events.
+
+---
+
+## 7. Track 02 Speech & Language: Final Verdict
+
+| Track 02 Objective | Target Specification | Delivered Reality |
 |---|---|---|
-| Presence poller (all deterministic triggers, dedup, auto-resolve) | ✅ Done | `incidents/poller.py` — 2-consecutive-failure flap threshold; resolves only incidents it opened (no cross-source resolution) |
-| Discord webhook alert ingestion | ✅ Done | Layered gate: container-name + alert-keyword pre-filter, dedup per service, `opened` on alert bridge |
-| Alert-vs-noise decision classification | ✅ Done | `ai/decision.py` — Gemini Decision 1 (`gemini-decision-1`, Decisions API: noul + choice verdicts, zero output tokens) behind `DECISION_PROVIDER`; `local` provider for Laya/Ollama-class models via `DECISION_BASE_URL`; budget-gated; keyword fallback |
-| Service→container name resolution | ✅ Done | `actions/runbooks.py` aliases→pinned containers |
-| Typed runbook whitelist | ✅ Done | Enum-mapped, validated params; covers every sudoers entry — logs/inspect/top per container, restart/stop/start, `docker ps -a`, `docker stats --no-stream`, `docker system prune -f`, nginx restart/status/`nginx -t`, `journalctl -u nginx|docker`, `systemctl status docker` |
-| RBAC core gate (LEAD + approval for mutations) | ✅ Done | Enforced in `execute()`; Discord roles mapped via `actor_role_for()` |
-| Magic-link token signing (HMAC, 15-min) | ✅ Done | Shared `shared/magic_link.py`; alert cards embed the console link |
-| Yuki key pool + LLM router | ✅ Done | `ai/key_pool.py`, `ai/router.py`, tested |
-| Infra docs local load (`docs/infra`) | ✅ Done | `load_infra_context(db)` → injected into every `classify_message` triage prompt (24KB cap); file fallback when DB empty |
-| FastAPI skeleton + incident CRUD + execute | ✅ Done | `/health`, `/api/incidents`, `/api/actions/plan`, `/api/actions/execute` |
-| Docker packaging (`pocketsre-core`) | ✅ Done | `python:3.14-slim`, no Node stage; compose mounts SSH key + `docs/infra` read-only; smoke-verified |
-| Audit log | ✅ Done | `audit_logs` Neon write-through + optional `audit_log.jsonl` mirror |
-| **SSH execution (Paramiko)** | ✅ Done | `actions/ssh_executor.py` — timeouts, exit-code capture, `POST /api/actions/execute` |
-| **Tool-call registry** | ✅ Done | `actions/tools.py` — name/description/mutating per tool; LLM-ready schemas |
-| **Autonomy mode enforcement** | ✅ Done | `READ_AUTO`: diagnostics auto-run on alert + announce post-facto, mutations still ask · `STRICT_CONFIRMATION`: everything is click-gated · `FULL_AUTONOMY`: auto-runs restart + announces |
-| **Proactive flow** | ✅ Done | Card→buttons→execute→report→resolution loop live incl. Devin dispatch button + mode badge |
-| **Reactive flow** (`/status` live, free-text triage) | ✅ Done | LLM classification (`ai/triage.py`) parses intent/service/severity; keyword heuristics remain deterministic fallback when router absent or LLM fails |
-| **Discord RBAC + DM guards** | ✅ Done | `ROLE_PERMISSIONS` config (`SRE-Lead`→lead, `DevOps`→responder, `Junior-Dev`→viewer), `guild_only` on all commands, DM early-return, highest-rank wins |
-| **Approval surfaces** (buttons, `/approve`, magic-link) | ✅ Done | Buttons + `/approve` slash + `@PocketSRE approve` text + console-side approve pills (click = approval, runs as LEAD). Discord cards immediately acknowledge clicks, switch button to "Working…" and disable it, display progress notices (up to 30s), provide next-steps guidance on failure/denial, and disable with a clear console/`/approve` fallback message upon 10-minute timeout. |
-| **Devin dispatch** (code-regression path) | ✅ Done | `swe/dispatch.py` posts to `/v1/sessions` (stub fallback); `swe/tracker.py` — code-level → GitHub Issue + Linear `issueCreate`, infra-only → Linear only; `link_pr()` comments PR URL on both; `pr_status()` polls merge state; `pr_watch_consumer` task posts follow-ups (PR opened → merged-by → health re-check → resolution, stale-PR re-ping at `PR_WATCH_TIMEOUT_MINUTES`); PocketSRE never merges — human SWE owns merge; all gated by budget governor + lead role |
-| **NeonDB persistence** | ✅ Done | `storage/db.py` — psycopg write-through for `incidents`/`audit_logs`/`budget_ledger` (PRD DDL), `SELECT 1` keepalive, JSONL audit mirror, open incidents restored into `IncidentService` on startup (`restore_from_db`); graceful in-memory fallback when `NEON_DATABASE_URL` unset |
-| **Budget governor** ($5 cap, per-provider ledger) | ✅ Done | `shared/budget.py` — pre-call `check()` enforces provider caps (`BUDGET_DEVIN_USD`/`LLM`/`SARVAM`/`SMALLEST`) + $5/incident cap + optional `BUDGET_*_DAILY_USD` per-day caps → `BudgetExhaustedError`; Neon `budget_ledger` write-through with in-memory fallback; Devin dispatch gated + recorded (`DEVIN_SESSION_COST_ESTIMATE_USD`), LLM calls gated (+ `LLM_CALL_COST_ESTIMATE_USD`); `/api/console/spend` returns incident + provider totals vs caps |
-| **Loop guard / escalation dossier** | ✅ Done | `_loop_guard` caps mutating trials (`MAX_TRIALS_PER_INCIDENT`) + blocks repeat mutations → `EscalationRequiredError` with 4-pillar dossier; Discord renders a dossier embed, APIs return 409 + dossier JSON, escalation audited |
-| **Web console UI** (incident page, actions, logs) | ✅ Done | `/console/` — calm, mobile-first design with high-contrast hierarchy; header with severity, status, service, summary, and copyable incident ID; prominent "What should I do next?" section with primary safe action; categorized actions (Recommended, Safe diagnostics, Recovery, and Advanced/Host behind progressive disclosure); pre-flight availability checks with tooltips; modal confirmation with exact action, target service, and side-effect warning; compact result cards with ANSI stripping (`stripAnsi`), scrollable terminal code blocks, and copy buttons; structured API error handling; empty states for action history and audit feed |
-| **Mission-control page** (overview, health, spend, SSE) | ✅ Done | `/console/mission-control.html` — operational overview with top summary metrics (overall system state, monitored services status breakdown, open incidents count, spend); compact health cards distinguishing Healthy, Degraded, Unreachable, No Coverage, and Not Configured with collapsible payload details; spend governor display replacing nulls with "Not configured" / "—" (never `$null`); live SSE audit feed with empty state |
-| **Knowledge upload + injection into triage** | ✅ Done | `POST /api/knowledge/upload` (admin-secret gated, .md/.txt ≤256KB) → `infra_knowledge_docs` in Neon; `load_infra_context(db)` is DB-first, `docs/infra/` is the sanitized public fallback; injected into every triage prompt. Repo docs scrubbed of IP/key names (repo is public) — real topology goes via upload only. `/pocketsre learn-infra` deferred (upload API covers it) |
-| **Gemini + OpenAI client wiring** | ✅ Done | `ai/clients/gemini.py` + `ai/clients/openai.py` (Yuki ports adapted to LLMProvider), `ai/factory.py` picks provider via `AI_PROVIDER`; wired into reactive triage |
-| **Text personas + language mirroring** | ✅ Done | Presentation-only Kiwi/Vikram profiles, server default/`/pocketsre avatar`, automatic English/Hindi/Malayalam/Hinglish/Manglish detection and deterministic fallback; no change to typed actions, RBAC, approval, or SSH execution. Voice remains deferred. |
-| `scripts/inject_mock_incident.sh` | ✅ Done | Air-gapped trigger POSTs crafted crash/bug/socket-lock incidents to `/api/incidents`; verified against the container |
-
-**Phase readiness:** Phase 1 ≈ 85% · Phase 2 (voice notes/code-mixing) = 0% · Phase 3 (live voice) = 0%
-
-**Verified environment facts:**
-- SSH to target VM works: `ssh -i ~/.ssh/pocketsre_bot_ed25519 pocketsre@<YUKI_VM_IP> 'sudo /usr/bin/docker logs --tail 10 yuki-telegram-bot'`
-- `/etc/sudoers.d/pocketsre` on Yuki VM is configured and `visudo -cf` validated (sudo 1.9+ compatible: trailing wildcards only, absolute paths, no `requiretty`).
-- `docker logs *` wildcard permits extra args (`--tail N`), and `grep` pipelines work because grep runs outside sudo: `ssh ... 'sudo docker logs <c> | grep -i error'` — filters are part of the SSH shell string, not the sudo'd argv.
-- Gemini keys already provisioned; `GeminiClient` ports directly from `project-yuki/chat/api/app/services/ai/clients/gemini.py`.
+| **Malayalam Voice Interface** | Mode B/C Sarvam Saaras STT & Bulbul TTS | **0% implemented**; no audio pipelines exist. |
+| **Multilingual Assistance** | Interactive bilingual SRE conversations | **Template presentation only** in Discord embed headers; no conversational text generation. |
+| **Speech-Led Workflows** | Discord voice notes (`.ogg`) & voice channel triage | **0% implemented**; strictly restricted to Discord text buttons and slash commands. |
+| **Code-Mixing Parsing** | Dynamic extraction of technical nouns in Manglish/Hinglish | **Regex wordlist matching** in `detect_language()` used exclusively for selecting static embed strings. |
 
 ---
 
-## 1. Interaction model (locked decisions)
+## 8. Conclusion
 
-**Surfaces (all three):**
-- Discord slash commands (`/status`, `/triage`, `/approve`, `/actions`)
-- Discord free-text messages (natural language triage plus automatic text-language mirroring; voice mirroring remains Phase 2)
-- Signed magic-link web console (incident console + mission-control page)
+PocketSRE succeeded in demonstrating that an out-of-band, budget-governed, non-root SRE control plane can remotely manage production container infrastructure safely over SSH with signed anti-timeout mobile webviews. 
 
-**Autonomy modes** (`AUTONOMY_MODE`, replacing current `autonomy_mode` semantics):
-| Mode | Reads | Mutations |
-|---|---|---|
-| `READ_AUTO` (default) | run freely, announce post-facto | always ask |
-| `STRICT_CONFIRMATION` | ask | ask |
-| `FULL_AUTONOMY` | run, announce | run, announce |
-
-**No free-form CLI.** All remote operations are modeled as typed, well-described tool calls — one tool per command category (`inspect_docker`, `fetch_logs`, `restart_container`, `docker_stats`, `docker_ps`, `nginx_restart`, `disk_prune`, `service_journal`). Each tool maps to sudoers-whitelisted binaries; parameters are validated enums/strings, never raw shell. Optional filters (e.g. log grep pattern) are validated `[a-zA-Z0-9_.:|-]+` and applied in the remote shell pipeline, outside sudo.
-
-**Approval flow:** mutating tool calls render a Discord card `[Approve] [Deny]` plus the magic-link. Approving executes the whitelisted command, returns a concise Discord report, and the console shows the full dossier. Full-autonomy mode runs without asking but always announces.
-
-**Loop guard (anti-infinite-loop):** `max_trials_per_incident` (default 3) + "no identical runbook twice on one incident" + `max_incident_age_minutes` cap. When exceeded or remediation is outside the whitelist (e.g. host postgres socket), PocketSRE halts, generates the escalation dossier, and hands off to the lead — never retries.
-
-**Budget governor:** per-provider budgets — `BUDGET_DEVIN_USD` (daily $), `BUDGET_LLM_USD` (Gemini = $0 free tier), `BUDGET_PER_INCIDENT_USD` ($5 default cap), plus `BUDGET_SARVAM_USD` / `BUDGET_SMALLEST_USD` guarding the metered speech credits (Sarvam 500 credits + Smallest.ai $60 provisioned; `POCKETSRE_SARVAM_API_KEY` and `POCKETSRE_SMALLEST_AI_API_KEY` in `.env`). Lockout at cap until manual override. Ledger persisted to NeonDB `budget_ledger`. Credit-burn hygiene: speech keys stay dormant until Phase 2, TTS/STT calls are cached and rate-limited per incident, and a `MOCK_SPEECH=true` test path replays fixtures instead of calling paid APIs.
-
----
-
-## 2. Functional flows to implement
-
-### 2.1 Proactive flow (observability → Discord)
-```
-poller/webhook alert → incident created → Discord card: diagnosis + proposed allowed actions
-  → "May I run: fetch_logs(yuki-core-api)?" [Approve via reply/slash/console]
-  → READ_AUTO diagnostics run; mutations gate on approval
-  → execute whitelisted command(s) over SSH → parse stdout
-  → concise Discord report + magic-link to full dossier on console
-  → if code regression → "Dispatch Devin fix?" permission card → Devin session → PR link
-  → on resolution → Discord summary card (actions taken, cost, uptime restored)
-```
-
-### 2.2 Reactive flow (human-initiated)
-```
-"is everything fine?" / /status / user reports an issue
-  → presence snapshot + docker stats investigation
-  → same propose→approve→execute→report loop as proactive
-```
-
-### 2.3 Simple issue
-```
-detect → investigate → run fixing runbook (e.g. restart) → transparent report (what ran, exit code, recovery verification)
-```
-
----
-
-## 3. Implementation steps (ordered critical path)
-
-### Track A — Execution spine (blocks everything)
-- **A1. ✅ `src/app/actions/ssh_executor.py`** — Paramiko SSH client: `AutoAddPolicy`, key from `target_ssh_key_path`, connect timeout 10s, exec timeout 30s, captures exit code/stdout/stderr. Per-call client (no singleton yet).
-- **A2. ✅ Tool-call registry (`src/app/actions/tools.py`)** — Typed tools `{name, description, mutating}` for logs/inspect/restart/stop/start; LLM-ready `tool_schemas()`. Params validated (`tail_lines`, safe-charset grep → `shlex.quote`). Remaining tools to add: `docker stats`, `docker ps`, `nginx_restart`, `service_journal`, `disk_prune`.
-- **A3. ✅ `ActionService.execute()`** — runs the tool over SSH, records exit code + output into audit (`POST /api/actions/execute`). Duration/cost fields still to add.
-- **A4. ✅ Pre-flight integrity check** — `_preflight()` re-queries `/presence/<route>` via `PresenceProbe`; blocks mutations on `maintenance_mode == true`. Post-run `_post_verify()` marks `verified`/`executed_unverified`.
-- **A5. Autonomy enforcement** — implement `READ_AUTO` / `STRICT_CONFIRMATION` / `FULL_AUTONOMY` gating in `ActionService` keyed off `AUTONOMY_MODE`; destructive flag on each tool drives the ask.
-- **A6. ✅ Config deltas** — `max_trials_per_incident`, budget vars, `DEVIN_API_KEY`, `NEON_DATABASE_URL`, `LINEAR_API_KEY`, speech keys, `ROLE_PERMISSIONS`, `PUBLIC_BASE_URL` added. `EXECUTION_PRIVILEGE_MODE` also added.
-
-### Track B — Discord conversation flows
-- **B1. ✅ RBAC guards** — `guild_only()` on all commands, `getattr(interaction.user, "roles", [])`, configurable `ROLE_PERMISSIONS` (`SRE-Lead` → lead/all incl. Devin dispatch, `DevOps` → responder/mutations, `Junior-Dev` → viewer/read-only), DM rejection.
-- **B2. ✅ Alert card** — embed with summary + buttons (Fetch logs / Inspect / Approve & Restart / Dispatch Devin / Deny) + console link + autonomy-mode badge.
-- **B3. ✅ Approval handler** — button callbacks + `/approve <incident_id>` + `@PocketSRE approve` text path → `ActionService.execute()`.
-- **B4. ✅ Reactive commands** — `/status` live presence + open incidents; `/triage` done; free-text mention triage runs through the LLM router (Gemini default, OpenAI-compatible via `OPENAI_BASE_URL`) with keyword fallback.
-- **B5. ✅ Result report** — `report_embed` posts status + truncated output; `resolution_embed` posts recovery summary.
-- **B6. ⚠️ Devin dispatch card** — lead-gated `Dispatch Devin fix` button → `POST /v1/sessions` → session URL posted; stub fallback when `DEVIN_API_KEY` unset. PR link-back + Linear pending.
-- **B7. ✅ Line-1 deferral** — `defer()` first in every handler (FAIL-1.1).
-
-### Track C — Persistence (NeonDB)
-- **C1. ✅ `storage/db.py`** — psycopg sync driver, `SELECT 1` keepalive every 4 min.
-- **C2. ✅ DDL migration** — `incidents`, `audit_logs`, `budget_ledger` per PRD §9.2 (`learned_playbooks`/`infra_knowledge_docs` deferred to Phase 2).
-- **C3. ✅ Swap in-memory stores** — `IncidentService`/`AuditLog` write-through to DB; `audit_log.jsonl` mirror supported; in-memory fallback when `NEON_DATABASE_URL` unset.
-
-### Track D — Budget governor
-- **D1. `ai/budget.py`** — thread-safe `SpendTracker`; `record(provider, usd)`; `check(incident_id)` → locked/unlocked; per-provider + per-incident caps; manual override flag.
-
-### Track E — Web console (dependency-free static assets, token-gated; Vite scaffold dropped — no Node on target)
-- **E1. ✅ Console API** — `GET /api/console/incident|health|spend|stream`, `POST /api/console/action` — all HMAC-token-validated (`api/console.py`). `POST /api/knowledge/upload` still pending.
-- **E2. ✅ Incident console page** — incident detail, tool pills (mutating = confirm gate), result/log panes, spend gauge, SSE feed, mission-control link.
-- **E3. ✅ Mission-control page** — live presence cards per endpoint (15s auto-refresh), spend gauge vs per-incident cap, SSE audit feed.
-- **E4. ✅ SSE `/api/console/stream`** — bridges poller `AlertBridge` open/resolved events + heartbeat.
-
-### Track F — Knowledge & docs
-- **F1. Knowledge injection** — `load_infra_context()` output injected into the triage prompt; top-3 chunk selection stays simple (filename/section match by service name — no vector DB for Phase 1).
-- **F2. `deploy/sudoers.pocketsre`** — version the verified sudoers file in-repo (keeps whitelist ↔ tool registry in sync).
-- **F3. `docs/infra/yuki_architecture.md`** — append verified SSH + sudoers notes.
-
-### Track G — Verification & demo plumbing
-- **G1. `scripts/inject_mock_incident.sh`** — mock trigger for crash/bug/socket-lock scenarios (README references it; it doesn't exist).
-- **G2. Tests** — executor (mocked transport), tool registry param validation, autonomy gating, budget lockout, magic-link expiry, console API auth.
-- **G3. Dockerfile/compose fixes** — `python:3.14-slim`, mount SSH key + `docs/infra` volumes per PRD compose snippet.
-
----
-
-## 4. Deferred (Phase 2+, confirmed out of scope for Phase 1)
-- Voice notes / Sarvam STT-TTS / code-mixed TTS replies (natural-language *text* input parsing is in-scope; Indic voice is Phase 2).
-- Live voice channel (Phase 3).
-- Learned playbooks auto-execution (schema lands with C2; learning loop is Phase 2).
-- Tailscale/Terraform plugins, Sentry webhook, Linear wiring (Linear issue creation optional stretch in B6).
-- Voice persona output and Sarvam/Smallest speech integration remain deferred until the text persona/language layer is stable.
-
-## 5. Definition of done (operator-testable)
-1. `./scripts/inject_mock_incident.sh --scenario crash` → Discord card appears → approve → real `docker restart` runs on `<YUKI_VM_IP>` → recovery verified → summary posted.
-2. `/status` in Discord returns live presence + spend.
-3. Magic-link opens incident console on phone; approving there executes over SSH.
-4. Mission-control page shows live health cards, audit feed, spend gauge.
-5. Read actions auto-run under `READ_AUTO`; mutations ask; `FULL_AUTONOMY` announces post-facto.
-6. Loop guard escalates a locked-socket incident to a dossier after 3 trials — no infinite retry.
-7. `make test` equivalent (`pytest tests/`) passes; `visudo -cf` clean on any sudoers change.
-
-## 6. Text persona and multilingual interaction (text complete; voice later)
-
-This is a presentation-layer capability. It must not duplicate or alter incident policy, tool selection, RBAC, approval, autonomy, budget, loop-guard, audit, or SSH execution logic.
-
-### 6.1 Persona profiles
-
-- **Kiwi** — memorable cute anime SRE companion: warm, encouraging, lightly playful, concise during incidents, and technically precise when proposing actions. Use `src/assets/kiwi_icon.png` in Discord/web presentation where appropriate.
-- **Vikram** — formal corporate SRE lead: concise, evidence-led, severity/action/verification oriented, and suitable for executive or enterprise channels. Use `src/assets/vikram_icon.png` where appropriate.
-- Both personas must produce the same structured action request and receive identical authorization and safety enforcement. Only wording, formatting, iconography, and eventual voice profile differ.
-
-### 6.2 Automatic language and code-mixing mirroring
-
-- Normal messages should automatically detect the operator's response language/style; users should not need to address the bot by persona name or language handle.
-- Mirror pure English, pure Hindi, pure Malayalam, Hinglish, Manglish, and natural mixed input by default.
-- Add an explicit override later (`/pocketsre language auto|english|hindi|malayalam`) without changing the underlying incident/action contract.
-- Extend triage output with language metadata (for example `response_language` and `code_mixed`) while retaining the existing structured fields for intent, service, severity, and summary.
-- Keep service names, incident IDs, command names, tool names, and approval wording semantically exact; translated text must never become a shell command or tool identifier.
-
-### 6.3 Shared response-rendering layer
-
-- ✅ Persona definitions and a renderer consume structured incident/action results without modifying them.
-- ✅ Discord embeds and ordinary text replies consume that response model; web-console labels can be added without changing the incident core.
-- ✅ `/pocketsre avatar kiwi|vikram`, `/pocketsre avatar`, and `/pocketsre help` are available; ordinary messages use the active/default persona automatically.
-- Store the initial selection in memory or configuration; add Neon persistence only if cross-restart/guild preferences are needed.
-- Provide deterministic Kiwi and Vikram templates for provider failures so persona behavior remains stable when the LLM is unavailable.
-
-### 6.4 Verification requirements
-
-- ✅ Fixture tests cover English, Hindi, Malayalam, Hinglish, and Manglish detection.
-- ✅ Persona contract tests prove presentation differs while generated tool calls and action contracts remain identical.
-- Tests proving ordinary messages resolve the active persona without requiring a persona handle.
-- Budget tests proving text mirroring does not call Sarvam or Smallest.
-- Docker test run remains the source of truth before marking this capability complete.
-
-### 6.5 Track 02 voice scope — Sarvam-first, provider-neutral
-
-**Goal:** complete the Track 02 promise without coupling speech providers to incident policy. Sarvam is the primary Indic speech provider; Smallest and edge-TTS are optional fallback/output providers. The existing text persona/language profile is the canonical shared input to this layer.
-
-**Milestone V1 — Discord voice notes (first shippable voice feature)**
-
-- Accept Discord audio attachments only (`.ogg`, `.mp3`, `.m4a`, `.wav`) with explicit size and duration limits.
-- Normalize supported input to the provider-required PCM format with FFmpeg in a bounded temporary workspace; reject unsupported/oversized files before an API call.
-- `SpeechToTextProvider.transcribe(audio, language_hint)` returns transcript plus detected language/style. Implement `SarvamSpeechProvider` first for English, Hindi, Malayalam, Hinglish, and Manglish.
-- Feed only the transcript and `Language` metadata into the existing text triage/rendering path; no speech provider may select a tool, construct a command, approve an action, or bypass RBAC.
-- Reply with the existing text/embed result. Generate an audio response only when the user supplied voice or explicitly requests a spoken reply.
-
-**Milestone V2 — persona-aware TTS**
-
-- `TextToSpeechProvider.synthesize(text, persona, language)` uses the shared Kiwi/Vikram persona metadata for voice choice, rate, and prosody.
-- Kiwi is warm and reassuring; Vikram is measured and formal. This changes delivery only, never the factual incident/action content.
-- Sarvam TTS is primary for Malayalam/Hindi and code-mixed output. Use edge-TTS as the no-credit fallback where a suitable voice is available; Smallest remains an optional secondary provider, not a mandatory dependency.
-- Never synthesize logs, raw command output, secrets, or long audit entries. Spoken results are short summaries plus a link/card for exact details.
-
-**Milestone V3 — live Discord voice channel (only after V1/V2 are stable)**
-
-- Join an explicitly requested incident voice channel; do not auto-join general channels.
-- Use bounded turn-taking/VAD, a short transcript confirmation for destructive requests, and text-card approval for every mutation.
-- On packet loss, STT/TTS failure, timeout, or exhausted budget, fall back to the text conversation and magic-link console without losing the incident state.
-
-**Cost, privacy, and safety controls (required before real API calls)**
-
-- Separate `speech_stt` and `speech_tts` budget ledger entries; enforce provider and per-incident caps before each call.
-- Add per-user and per-incident rate limits, a maximum audio duration, response-audio caching keyed by sanitized text/persona/language, and `MOCK_SPEECH=true` fixture mode.
-- Do not persist source audio by default. Retain only the minimum transcript/audit metadata necessary for incident traceability; redact secrets before provider submission where possible.
-- Keep speech credentials in deployment `.env` only (`POCKETSRE_SARVAM_API_KEY`, optional fallback key); no keys, recordings, or real topology in the repository.
-
-**Track 02 definition of done**
-
-1. A Malayalam, Hindi, Hinglish, or Manglish voice note produces a correct transcript and a mirrored Kiwi/Vikram text response.
-2. A request that proposes a mutation still creates the same typed action and lead approval gate as its equivalent text message.
-3. Optional TTS speaks a concise persona-aligned response; API outage or budget exhaustion falls back to text without failing the incident flow.
-4. Docker tests use mocked speech fixtures—no paid credits—and cover transcript language metadata, provider failure, budget lockout, and tool-call invariance.
-5. Live voice is only marked complete after a real Discord channel smoke test proves join, receive, STT, TTS, text fallback, and clean disconnect behavior.
+However, because a 12-hour solo hackathon sprint was insufficient to deliver both rock-solid infrastructure safety and a complete Indian-language voice stack, the project stopped at the Discord-bot + Web-Console stage. All further development is concluded.
